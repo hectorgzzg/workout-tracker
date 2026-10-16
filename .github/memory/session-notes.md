@@ -162,3 +162,24 @@ Document completed development sessions here so future work can benefit from the
 - `npm ci`, `npm run lint`, `npm run format:check`, and `npm run build` passed; npm reported zero vulnerabilities.
 - Live smoke checks passed for backend health, frontend document and transformed Vue modules, a port override, and headless Chrome rendering with no console/resource errors.
 - No product features or automated test infrastructure were added. The local combined dev server was left running at `http://127.0.0.1:5173/` with backend health at `http://127.0.0.1:3000/health`.
+
+### Session: WT-002 isolated automated test infrastructure
+
+**Date:** 2026-10-16
+
+#### What was accomplished
+
+- Configured Jest Node/jsdom projects with Supertest and Vue Testing Library, isolated user/workout factories, per-test cleanup hooks, and a guarded dedicated test-database cleanup entry point.
+- Configured Playwright to start fresh backend/frontend processes, use Chromium, and retain failure traces, screenshots, videos, and an HTML report. Documented test commands, database safety, and browser setup; updated the WT-002 backlog evidence.
+
+#### Key findings and decisions
+
+- Vue's official `@vue/vue3-jest` release supports Jest 29 only, so the harness stays on the compatible Jest 29 / Vue Jest 29 combination. This leaves dev-only audit advisories; production dependencies audited clean.
+- PostgreSQL persistence does not exist until WT-003. Current tests verify that destructive cleanup is gated to `workout_tracker_test`; they do not connect to or create a database.
+- Playwright specs, execution, browser isolation, and failure-artifact capture remain owned by `test-engineer`; a baseline smoke was added and executed for the WT-001/WT-002 compliance audit.
+
+#### Outcomes
+
+- Backend, frontend, and browser harnesses each caught a deliberate assertion failure and passed after the expected assertion was restored. The browser smoke passed three repeats with two workers and retries disabled, and retained screenshot/video/trace artifacts.
+- The cleanup guard initially allowed equivalent PostgreSQL URLs and then same database names on alternate hosts; regression tests reproduced both gaps. The guard now rejects any `DATABASE_URL` using the reserved test database name.
+- `npm test -- --maxWorkers=2` passed 5 suites / 9 tests; lint, formatting, frontend build, `npm ci --dry-run`, and `git diff --check` passed. `npm audit --omit=dev` reported no production dependency vulnerabilities. A full `npm ci` was not rerun because a pre-existing frontend process was using the current `node_modules`.

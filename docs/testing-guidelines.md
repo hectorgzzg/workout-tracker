@@ -4,7 +4,7 @@
 
 This project emphasizes **Test-Driven Development (TDD)** as a core workflow pattern. Tests are not just validation tools - they are your roadmap for implementation and your safety net for refactoring.
 
-The [project specification](project-overview.md) is the source of truth for product behavior. Reference its requirement IDs in test planning and coverage reports. This workspace has no application/test infrastructure yet; commands and endpoint examples below are conventions to verify after scaffolding, not executable capabilities today.
+The [project specification](project-overview.md) is the source of truth for product behavior. Reference its requirement IDs in test planning and coverage reports. Jest, Vue Testing Library, and Playwright infrastructure is configured; current smoke tests validate only the baseline and harness, not workout features or persistence.
 
 ## Testing Scope
 
@@ -216,30 +216,30 @@ Planning decisions confirmed on 2026-10-16 add these explicit checks:
 
 ## Running Tests
 
-The following commands are planned conventions. Confirm actual package scripts and prerequisites first; do not report a test suite as run before it exists.
-
 ### Run All Tests
 
 ```bash
 npm test
 ```
 
-### Run Tests in Watch Mode
+### Watch Mode
 
 ```bash
 npm run test:watch
 ```
 
-### Run Specific Test File
+### Backend and Frontend Projects
 
 ```bash
-npm test -- app.test.js
+npm run test:backend
+npm run test:frontend
 ```
 
-### Run Specific Test by Name
+### Run Specific Test File or Name
 
 ```bash
-npm test -- --testNamePattern="should create an exercise"
+npm test -- --runTestsByPath packages/backend/test/app.test.js
+npm test -- --testNamePattern="reports that the API is available"
 ```
 
 ### Run with Coverage
@@ -248,11 +248,14 @@ npm test -- --testNamePattern="should create an exercise"
 npm test -- --coverage
 ```
 
-### UI E2E Command Convention
+### Browser Tests
 
 ```bash
-npm run test:ui
+npx playwright install chromium
+npm run test:e2e
 ```
+
+Playwright starts isolated backend/frontend processes on ports 3101 and 5174 and never reuses an existing server. Failure traces, screenshots, videos, and the HTML report are retained in ignored output directories. The `test-engineer` owns browser spec authoring, execution, and isolation verification; no browser journey is considered covered until a real spec and result are recorded.
 
 ## Test-Driven Workflow with Copilot
 

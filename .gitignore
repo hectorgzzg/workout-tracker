@@ -4,10 +4,14 @@ MacroFactor-20260927154219.csv
 node_modules/
 packages/*/dist/
 coverage/
+test-results/
+playwright-report/
+blob-report/
 
 # Local environment and editor state
 .env
 .env.*
 !.env.example
+!.env.test.example
 .DS_Store
 npm-debug.log*

@@ -11,16 +11,22 @@ export default [
   {
     files: ["packages/backend/**/*.js"],
     languageOptions: {
-      globals: globals.node,
+      globals: { ...globals.node, ...globals.jest },
     },
   },
   {
     files: ["packages/frontend/**/*.{js,vue}"],
     languageOptions: {
-      globals: globals.browser,
+      globals: { ...globals.browser, ...globals.jest },
     },
     rules: {
       "vue/singleline-html-element-content-newline": "off",
+    },
+  },
+  {
+    files: ["jest.config.js", "playwright.config.js", "babel.config.cjs"],
+    languageOptions: {
+      globals: globals.node,
     },
   },
 ];

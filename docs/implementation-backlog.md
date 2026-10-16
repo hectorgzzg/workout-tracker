@@ -2,9 +2,9 @@
 
 ## Purpose and Status
 
-Created 2026-10-16 from the [canonical specification](project-overview.md). This is the repository's implementation task backlog, not a claim that the application exists. No task below has been implemented or verified. GitHub issues have not been created; these stable task IDs can be used when issues are created later.
+Created 2026-10-16 from the [canonical specification](project-overview.md). This is the repository's implementation task backlog, not a claim that the application exists. Task implementation and verification status is recorded below; evidence applies only to the checks listed. GitHub issues have not been created; these stable task IDs can be used when issues are created later.
 
-**Status: WT-001 complete; WT-002 through WT-032 not started.** The ordered cards form a completion-dependency graph; independent work may proceed once prerequisites are met. Collect content for WT-029 early, even though its final readiness check depends on implemented settings.
+**Status: WT-001 and WT-002 complete; WT-003 through WT-032 not started.** The ordered cards form a completion-dependency graph; independent work may proceed once prerequisites are met. Collect content for WT-029 early, even though its final readiness check depends on implemented settings.
 
 Scope includes all approved first-release features. Deferred functionality remains deferred: offline/PWA guarantees, password reset/verification, multiple current programs, guaranteed background alerts, and in-session exercise substitution/structural edits.
 
@@ -46,6 +46,7 @@ Scope includes all approved first-release features. Deferred functionality remai
 **Owner:** tdd-developer; test-engineer for Playwright infrastructure.
 **Acceptance:** Configure Jest/Supertest, Vue Testing Library with required plugins, and Playwright with frontend/backend lifecycle management. Provide isolated test-data factories, dedicated database configuration, cleanup, test commands, and failure artifacts. Production/personal data cannot be selected accidentally by destructive test setup.
 **Verification:** Run one deliberately failing then passing harness assertion per layer; verify worker/test isolation and failure artifact capture. Record actual scripts and browser-install prerequisites.
+**WT-002 evidence (2026-10-16):** Added Jest Node/jsdom projects, Supertest/Vue Testing Library smoke tests, isolated user/workout factories, per-test cleanup hooks, and a destructive-cleanup guard requiring `TEST_DATABASE_URL` to target `workout_tracker_test`; cleanup rejects any `DATABASE_URL` with that reserved database name, including alternate host/scheme/port spellings. Backend, frontend, and browser harness assertions each produced a deliberate RED and passed after restoring the expected result. The browser smoke starts isolated backend/frontend processes, checks `/health` and the accessible Home heading, and passed three repeats with two workers and retries disabled. Its intentional failure retained screenshot, video, and trace artifacts under the ignored test-results directory. `npm test -- --maxWorkers=2` passed 5 suites / 9 tests; lint, format, frontend build, `git diff --check`, and `npm ci --dry-run` passed. Browser servers used alternate ports because a pre-existing process occupied 5174; the process was left untouched and test-owned ports were released. `npx playwright install chromium` installed the required browser. `npm audit --omit=dev` found 0 production vulnerabilities; the Jest 29 / Vue Jest 29 development tree reports 5 moderate and 30 high advisories, and Vue Jest has no published Jest 30-compatible release. PostgreSQL persistence/data cleanup execution and product journeys under ACC-01, SES-01, and UI-03 remain future feature coverage, not WT-002 harness scope.
 
 ### WT-003: Establish persistence, migrations, and domain boundaries
 

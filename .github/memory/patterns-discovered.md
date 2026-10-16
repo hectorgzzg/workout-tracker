@@ -5,6 +5,7 @@ Collect verified, reusable conventions from the Workout Tracker App here. Prefer
 ## Pattern Template
 
 ### <Pattern name>
+
 **Context:** <Where and when this applies>
 
 **Problem:** <The ambiguity or failure this pattern addresses>
@@ -37,3 +38,15 @@ const set = await setService.findById(setId); // null when the set does not exis
 ```
 
 **Related files:** Service modules and their callers that list or retrieve workouts, exercises, sessions, or sets.
+
+---
+
+## Test database cleanup guard
+
+**Context:** Tests that may create or delete persisted workout data.
+
+**Problem:** A test cleanup command must never fall back to an application or personal database URL when test configuration is missing or misdirected.
+
+**Solution:** Require an explicit `TEST_DATABASE_URL` with the exact dedicated database name, reject that reserved database name if it also appears in `DATABASE_URL` regardless of host or URL alias, and call destructive cleanup only after validation. Register per-test cleanup callbacks and run them after each test in reverse registration order.
+
+**Related files:** `packages/backend/test/support/database.js`, `packages/backend/test/support/cleanup.js`, and `packages/backend/test/setup.js`.

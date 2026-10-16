@@ -18,6 +18,35 @@
       "approve": true,
       "matchCommandLine": true
     },
-    "npx prettier": true
+    "npx prettier": true,
+    "/^node --version && npm --version && npm ls --depth=0$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "npm test": true,
+    "npm audit": true,
+    "npm dedupe": true,
+    "/^npm audit --json \\| node -e 'let input = \"\"; process\\.stdin\\.on\\(\"data\", chunk => input \\+= chunk\\); process\\.stdin\\.on\\(\"end\", \\(\\) => \\{ const audit = JSON\\.parse\\(input\\); const items = Object\\.entries\\(audit\\.vulnerabilities \\?\\? \\{\\}\\)\\.map\\(\\(\\[name, issue\\]\\) => \\(\\{ name, severity: issue\\.severity, direct: issue\\.isDirect, range: issue\\.range, fixAvailable: issue\\.fixAvailable \\}\\)\\); console\\.log\\(JSON\\.stringify\\(\\{ metadata: audit\\.metadata\\?\\.vulnerabilities, vulnerabilities: items \\}, null, 2\\)\\); \\}\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --input-type=module -e 'import config from \"\\./playwright\\.config\\.js\"; if \\(config\\.webServer\\?\\.length !== 2 \\|\\| config\\.use\\?\\.trace !== \"retain-on-failure\" \\|\\| config\\.use\\?\\.screenshot !== \"only-on-failure\" \\|\\| config\\.use\\?\\.video !== \"retain-on-failure\"\\) throw new Error\\(\"Playwright lifecycle or failure artifacts are not configured\"\\); console\\.log\\(\"Playwright config loads with two managed servers and failure artifacts\"\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --input-type=module -e 'import config from \"\\./jest\\.config\\.js\"; if \\(config\\.projects\\?\\.length !== 2 \\|\\| !config\\.projects\\.some\\(project => project\\.displayName === \"backend\" && project\\.testEnvironment === \"node\"\\) \\|\\| !config\\.projects\\.some\\(project => project\\.displayName === \"frontend\" && project\\.testEnvironment === \"jsdom\"\\)\\) throw new Error\\(\"Jest project isolation is incomplete\"\\); console\\.log\\(\"Jest config loads with isolated Node and jsdom projects\"\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --input-type=module -e 'import config from \"\\./playwright\\.config\\.js\"; if \\(config\\.webServer\\?\\.length !== 2 \\|\\| config\\.webServer\\.some\\(server => server\\.reuseExistingServer !== false\\) \\|\\| config\\.use\\?\\.trace !== \"retain-on-failure\" \\|\\| config\\.use\\?\\.screenshot !== \"only-on-failure\" \\|\\| config\\.use\\?\\.video !== \"retain-on-failure\"\\) throw new Error\\(\"Playwright isolation or failure artifact configuration is incomplete\"\\); console\\.log\\(\"Playwright config loads: two fresh servers, failure trace/screenshot/video enabled\"\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "npx playwright": true,
+    "/^node --input-type=module -e 'for \\(const url of \\[\"http://127\\.0\\.0\\.1:3101/health\", \"http://127\\.0\\.0\\.1:5174/\"\\]\\) \\{ try \\{ const response = await fetch\\(url\\); console\\.log\\(`\\$\\{url\\} already responds with \\$\\{response\\.status\\}`\\); \\} catch \\{ console\\.log\\(`\\$\\{url\\} is free`\\); \\} \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "lsof": true
   }
 }
