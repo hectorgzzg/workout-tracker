@@ -2,7 +2,9 @@
 
 ## Overview
 
-**Agentic Development** refers to working with AI coding assistants as collaborative agents in iterative, feedback-driven development cycles. This document outlines key workflow patterns you'll practice in Session 5.
+Work in small, evidence-driven cycles against the [Workout Tracker specification](project-overview.md). The mobile experience is primary; desktop is responsive support. Reference requirement IDs in acceptance tests and coverage reports.
+
+The repository currently contains requirements, agent definitions, and a CSV sample, not a runnable app. Commands below are intended conventions to verify after scaffolding, not proof that scripts or suites exist.
 
 ## Core Principles
 
@@ -20,7 +22,7 @@
 ### The Red-Green-Refactor Loop
 
 ```
-1. RED    → Write or run test (fails)
+1. RED    → Write a test FIRST for new behavior; reproduce an existing failure for a repair
 2. GREEN  → Write minimal code to pass
 3. REFACTOR → Improve code quality
 4. REPEAT → Move to next test
@@ -28,8 +30,9 @@
 
 ### Workflow with AI
 
-1. **Understand the Test**
-   - Read the failing test carefully
+1. **Write and Understand the Test**
+   - For a new feature, write the test before implementation; for a repair, read the existing failing test
+   - Run it and confirm failure for the expected behavior, not an environment blocker
    - Ask Copilot: "Explain what this test expects"
    - Identify the specific requirement
 
@@ -110,15 +113,15 @@ You: "Run lint again to verify."
 
 ---
 
-## Pattern 3: Implementation Planning and Execution
+## Pattern 3: Requirement-Driven Implementation
 
-### The Plan-Build-Test-Fix Cycle
+### The Plan-Test-Implement-Verify Cycle
 
 ```
 1. PLAN    → Break feature into steps
-2. BUILD   → Implement one step
-3. TEST    → Verify step works
-4. FIX     → Debug issues
+2. RED     → Write and run the smallest behavior test FIRST
+3. GREEN   → Implement the minimum and rerun the same test
+4. REFACTOR → Simplify the touched behavior and rerun tests
 5. REPEAT  → Next step
 ```
 
@@ -127,28 +130,27 @@ You: "Run lint again to verify."
 1. **Create Implementation Plan**
 
    ```
-   You: "I need to implement the DELETE /api/exercises/:id endpoint.
-   Create a step-by-step implementation plan."
+   You: "Implement SES-02 emergency finishing. Create a test-first plan."
 
    Copilot:
-   1. Parse ID from request params
-   2. Find the exercise by ID
-   3. Return 404 if not found
-   4. Delete the exercise
-   5. Return a success response
-   6. Add error handling
+   1. Write a test retaining an exercise with one checked working set.
+   2. Verify unchecked logs and exercises with no working set are excluded.
+   3. Run the tests and explain the intended RED failures.
+   4. Implement the smallest fix; rerun to GREEN.
+   5. Refactor if useful; rerun tests.
+   6. Hand off partial calendar/progression UI checks to test-engineer.
    ```
 
 2. **Implement Step-by-Step**
 
    ```
-   You: "Implement step 1 and 2: parse the ID and find the exercise."
-   [Copilot provides code]
+   You: "Write and run the SES-02 retention test before implementation."
+   [Copilot writes the test, reproduces RED, and explains why it fails]
 
-   You: "Add a console.log to verify this works, then test manually."
-   [Test with curl or Postman]
+   You: "Implement only enough to pass that test, then run it again."
+   [Copilot implements and verifies GREEN]
 
-   You: "Good! Now implement step 3: handle not found case."
+   You: "Consider a scoped refactor and rerun the same tests."
    ```
 
 3. **Test Each Step**
@@ -199,30 +201,30 @@ You: "Run lint again to verify."
    ```
 
 2. **Test User Flows**
-   - Create a set
-   - Toggle completion
-   - Edit set
-   - Delete set
-   - Check edge cases
+   - Import/preview the CSV and configure the manual deload
+   - Start/resume a workout and log actual weight, reps, and RIR
+   - Unlock/correct an active set and verify unfinished suggestions
+   - Pause/resume timers and complete or emergency-finish a workout
+   - Verify calendar progression, immutable history, and API failure behavior
 
 3. **Document Issues**
 
    ```
-   You: "When I click Delete on a workout set, nothing happens. Here's the relevant code:
-   [paste handleDeleteSet function]
+   You: "When I uncheck an active workout set, its inputs stay locked. Here's the relevant code:
+   [paste active-set handler]
 
    What's wrong?"
 
-   Copilot: "The function logs to the console but doesn't actually call the API..."
+   Copilot: "Let's reproduce the UI-03 unlock expectation before changing the handler."
    ```
 
 4. **Fix and Retest**
 
    ```
-   You: "Implement the actual DELETE API call."
-   [Copilot provides implementation]
+   You: "Write the regression test, reproduce RED, then implement the minimal unlock fix."
+   [Copilot verifies RED, implements the fix, and verifies GREEN]
 
-   You: "Now test again by clicking delete in the UI."
+   You: "Now verify unchecking unlocks inputs and recomputes only unfinished suggestions."
    [Verify fix works]
    ```
 
@@ -252,17 +254,16 @@ You: "Run lint again to verify."
 ### Workflow with AI
 
 1. **Define Critical Journeys**
-   - Create set
-   - Edit set
-   - Toggle completion
-   - Delete set
-   - Handle API error state
+   - Use the requirement coverage matrix in the testing guidelines
+   - Include CSV/deload setup, mobile tracking, timers, load recommendations, plate visualization, emergency retention, and history corrections
+   - Cover account boundaries, unit overrides, flexible scheduling, restart, and API failure states
 
 2. **Generate Test Skeletons**
 
    ```
-   You: "Generate UI tests for create, edit, toggle, and delete journeys.
-   Use stable selectors and avoid arbitrary waits."
+   You: "Have test-engineer add focused UI tests for the affected requirement IDs.
+   Use page objects for interactions, spec assertions for outcomes, accessible selectors,
+   state-based waits, and per-test data. Validate mobile and desktop layouts."
    ```
 
 3. **Run and Triage Failures**
@@ -274,7 +275,9 @@ You: "Run lint again to verify."
 4. **Stabilize and Re-run**
    - Ask Copilot to replace brittle selectors
    - Add state-based waiting instead of fixed delays
-   - Re-run until stable
+   - Classify application, test, and environment failures using actual evidence
+   - Run individually, grouped, repeatedly without retries, and in parallel where supported
+   - Follow automation with focused manual mobile browser validation; report unverified checks
 
 5. **Promote to Smoke Suite**
    - Keep a small fast set for CI gating
@@ -314,16 +317,33 @@ You: "Run lint again to verify."
    It should invert the current value: set.completed = !set.completed"
    ```
 
-3. **Implement Fix**
+3. **Create and Run a Regression Test Before the Fix**
 
    ```
-   You: "Apply this fix."
+   You: "Write a test that verifies active-set completion toggles both ways, then run it to confirm RED."
    ```
 
-4. **Create Test to Prevent Regression**
+4. **Implement and Verify**
    ```
-   You: "Write a test that verifies toggle works both ways."
+   You: "Apply the smallest fix, run the same test to GREEN, and refactor only if useful."
    ```
+
+## Product-Specific Delivery Order
+
+The [implementation backlog](implementation-backlog.md) is the task-level execution plan: WT-001 through WT-032, with dependencies, requirement links, acceptance criteria, and verification steps. Start at WT-001 and update task evidence/status as work is completed. The stages below are an overview, not a replacement for those cards.
+
+Build vertical slices using the same test-first cycle; this is an implementation order, not a reduction of first-release scope:
+
+1. Establish the Vue/Express test infrastructure, invite-only identity, authorization, and isolated test database.
+2. Implement the admin catalog, user/gym configuration, unit overrides, CSV preview/partial import, and manual deload activation.
+3. Implement program/run instances, flexible weekly progression, calendar links, and mobile workout detail/navigation.
+4. Implement online draft recovery, set logging/locking, session/rest timers, normal completion, discard, and emergency retention.
+5. Implement approved external/bodyweight/assisted estimates and finite-inventory plate visualization with numeric fixtures.
+6. Implement immutable metrics, labeled future-only corrections, cross-program history, dashboard filters/charts, and full critical-journey validation.
+
+Keep original historical values separate from corrections. Do not replace the agreed emergency rule with all-or-nothing exercise retention: **one checked working set is sufficient**, and only checked sets are retained. Active drafts stay outside finished history; a wholly skipped workout creates only a status event.
+
+Lint remains a separate workflow. During failing-test repair, do not remove console statements or unused variables unless they demonstrably cause that test command to fail. Do not commit, push, or change branches without an explicit user request.
 
 ---
 

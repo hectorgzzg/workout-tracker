@@ -3,16 +3,36 @@
 ## Project Context
 
 - This is a full-stack workout tracker with a Vue frontend and an Express backend.
+- The product is English and mobile-first; desktop is responsive support. The initial audience is approximately five invite-only users.
+- This repository currently contains specifications, agent definitions, and a CSV sample, not runnable application packages or tests. Verify actual scripts and setup before executing documented conventions.
 - The application helps users track training plans, exercises, workout sessions, sets, 1RM, RIR, rep ranges, and progressive overload.
 - Work iteratively: make small changes, gather feedback, and validate behavior before moving on.
 - Keep examples and implementation choices focused on this workout tracker and its Vue + Express stack.
 
 ## Documentation References
 
-- [Project overview](../docs/project-overview.md): Architecture, technology stack, and repository structure.
+- [Project specification](../docs/project-overview.md): Canonical product requirements, stable requirement IDs, planned architecture, and deferred scope.
 - [Testing guidelines](../docs/testing-guidelines.md): Test patterns and standards.
 - [Workflow patterns](../docs/workflow-patterns.md): Development workflow guidance.
 - When examples in referenced docs conflict with the workout tracker domain or the Vue + Express stack, follow the actual codebase and these project instructions.
+
+## Product Invariants
+
+- Follow the canonical specification and reference its requirement IDs in acceptance tests. Do not treat old session examples or generic CRUD suggestions as new product requirements.
+- Import every CSV cycle as a training week; do not enforce a six/seven-week length or trust deload metadata. Preview row errors and partial imports; block unsafe grouping, unresolved catalog mappings, and empty workouts. Build one manual deload week before activation.
+- One current program, one editable gym, and one active online session per user. Preserve history across replacement/restarts; restarts create new run instances using the configured deload.
+- Program days are flexible slots, not fixed weekdays. Rest days are checked manually; workouts resolve on completion or confirmed emergency finishing. Advance only when all current-week days are resolved. No silent rewind or repeating a slot within a run.
+- Calendar records actual workout dates. Enforce one retained-performance workout per start date in the snapshotted timezone; wholly skipped status events have no exercise-performance records.
+- Persist online drafts for reload recovery, detect competing updates, and prevent duplicate saves. Drafts and ordinary discards do not appear in finished history or advance the program.
+- Normal completion requires every required set checked. Emergency Finish Early / Skip Remaining retains an exercise with **at least one checked working set**, retains checked sets only, and discards unchecked logs. Resolve the day as partial/skipped, not fully completed.
+- Actual inputs are weight, integer reps, and integer RIR 0-10. Standard/failure sets are working sets; warmups do not contribute performance metrics or start rest. Completed active rows lock until unchecked; only unfinished recommendations recalculate.
+- Follow approved REC-01/REC-02 formulas and constraints rather than inventing training rules. Preserve exact CSV ranges, honor RIR, equipment availability and the 10% upward-load cap, and label high-rep estimates low-confidence.
+- Support external, dumbbell, bodyweight, and assisted loads in the first release. Record one-dumbbell load; volume uses the correct dumbbell/side count. Missing bodyweight factors or machine ratios require manual fallback, not guessed coefficients.
+- Profile units are defaults; tracker changes persist per exercise. Store physical loads canonically and snapshot prescriptions, bodyweight, factors, ratios, and units for historical consistency.
+- Historical metrics use immutable original working-set values. Finished-session edits may correct weight/reps only; label and store corrections separately for future suggestions, never recompute past metrics from them.
+- Gym settings include equipment increments, finite plate inventory, and bar weights. Barbell visualization must balance both sides, include the bar, minimize plate count, and require user choice for inexact targets.
+- Profile rest defaults: upper compound 120s, lower compound 180s, upper/lower isolation 90s, core 60s. Ignore CSV rest fields; pause/resume both timers and recover via timestamps.
+- Keep admin-managed catalog data and per-user records properly authorized. No password reset/email verification, offline/PWA guarantees, multiple concurrent programs, or in-session substitution in the first release.
 
 ## Development Principles
 
@@ -35,7 +55,8 @@ Use unit tests, integration tests, and UI end-to-end tests together. Fast tests 
 - **Backend API changes:** Write Jest/Supertest tests first, run them to confirm they fail, implement the behavior, then refactor (Red-Green-Refactor).
 - **Frontend component features:** Write Vue Testing Library tests first for component behavior, implement to pass, then refactor. Follow with manual browser testing for full UI flows.
 - **Critical user journeys:** Have the test-engineer author and execute Playwright tests, including failure triage and isolation checks.
-- Test workout plans, exercises, sessions, sets, and training progress behavior as appropriate to the change.
+- Use the requirement coverage matrix in the testing guidelines, including CSV/deload, mobile navigation, online drafts, timers, assistance, plate loading, emergency retention, immutable metrics, unit overrides, and account isolation.
+- Use accessibility-first selectors, reusable Playwright page objects, state-based waits, isolated data, and focused manual mobile validation after automation.
 
 ## Workflow Patterns
 
