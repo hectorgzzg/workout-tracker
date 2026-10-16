@@ -111,3 +111,29 @@ Document completed development sessions here so future work can benefit from the
 
 - Requirement-ID/coverage checks, local-link checks, agent YAML/tool/model checks, CSV cycle verification, and `git diff --check` passed. Updated product, test, workflow, and agent files had no editor diagnostics.
 - No application tests or browser flows were executed: the repository still has no application packages or test infrastructure. This session updated requirements and guidance only.
+
+---
+
+### Session: Implementation backlog and final planning decisions
+
+**Date:** 2026-10-16
+
+#### What was accomplished
+
+- Recorded the latest approved planning decisions in the canonical specification and testing guidance.
+- Created `docs/implementation-backlog.md` with 32 not-started task cards, completion dependencies, owners, acceptance criteria, verification steps, milestones, and mappings for all 20 requirement IDs.
+- Linked the backlog from the specification, testing guide, and workflow guide. No GitHub issues, application scaffolding, or cloud resources were created.
+
+#### Key findings and decisions
+
+- Each imported/manual-deload week has exactly seven slots; the number of training weeks remains whatever the CSV supplies.
+- Individual exercise skipping is allowed while continuing the session, but saving uses partial/emergency finalization with the established checked-working-set retention rule.
+- The 10% upward recommendation cap compares effective resistance against the latest checked same-exercise working set, or latest retained historical reference with applicable corrections; selected assistance is not the capped quantity.
+- Provision the first admin during secure setup; admins privately share expiring single-use invitation links without requiring automated email delivery.
+- Delivery targets current mobile Safari/Chrome and desktop Chrome/Safari; include CI, migrations, deployment smoke checks, backup/restore verification, content ownership/rights, and gym readiness. Neutral development images are permitted; unknown factors/ratios never enable guessed recommendations.
+- WT-001 is ready to start. Collect content/gym inputs early; live staging and launch remain gated by access, cost approval, actual data, and verification evidence.
+
+#### Outcomes
+
+- Structured checks passed for recorded decisions, 32 unique complete task cards, ordered acyclic dependencies, all 20 requirement mappings, and specification/backlog links.
+- All tasks remain not started. Documentation validation is not application test execution or production-readiness evidence.

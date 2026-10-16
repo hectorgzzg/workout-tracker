@@ -174,6 +174,8 @@ Guidelines:
 
 These are required test targets, not claims of tests already implemented. Track each target's real test file/scenario, assertion coverage, execution result, and remaining gap.
 
+Use the [implementation backlog](implementation-backlog.md) for task IDs, completion dependencies, acceptance criteria, and verification ownership. The backlog's traceability table is planned delivery coverage, not evidence that tests exist or pass.
+
 | Requirements   | Required behavior and regression cases                                                                                                                                                                                                          |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ACC-01         | Invite-only registration, admin catalog permissions, per-user data isolation, unauthorized access rejected by API                                                                                                                               |
@@ -193,6 +195,14 @@ These are required test targets, not claims of tests already implemented. Track 
 | UI-05          | Per-exercise RM/load/volume/reps charts, workout counts, volume totals, date filters, empty/error states, usable profile/gym/admin views                                                                                                        |
 
 Use small deterministic numeric fixtures for formulas, units, side/dumbbell accounting, bodyweight/assistance, and plate inventories. Include boundary cases and an independently calculated expected result rather than using the production calculation to generate test expectations.
+
+Planning decisions confirmed on 2026-10-16 add these explicit checks:
+
+- ACC-01: admin bootstrap, privately shared expiring single-use invitation links, rejected expired/reused tokens, and concurrent redemption protection; no email-delivery service is required.
+- IMP-01/PLN-01: exactly seven day slots per imported week and manual deload; reject activation with six/eight slots without imposing a six/seven-week program length.
+- SES-02: skipping an individual exercise permits continuing with later exercises, but finalization must be partial/emergency, not normal completion; retain checked sets from exercises with at least one checked working set.
+- REC-01/REC-02: the 10% upward cap uses effective resistance and the latest checked same-exercise working set, otherwise the latest retained historical reference with applicable corrections; never apply it directly to selected assistance.
+- Delivery acceptance: record current iPhone Safari, Android Chrome, and desktop Chrome/Safari checks, staging smoke results, backup/restore evidence, and content/gym readiness gaps. Neutral development image placeholders are not proof that real assets or usage rights have been validated.
 
 ### Playwright Structure and Isolation
 

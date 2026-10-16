@@ -2,7 +2,9 @@
 
 ## Status and Scope
 
-This is the canonical product specification agreed on 2026-10-15. Requirement IDs below connect implementation and tests to the clarified behavior. Later answers supersede earlier discussion, particularly emergency finishing and historical corrections.
+This is the canonical product specification agreed on 2026-10-15, with planning decisions confirmed on 2026-10-16. Requirement IDs below connect implementation and tests to the clarified behavior. Later answers supersede earlier discussion, particularly emergency finishing and historical corrections.
+
+The [implementation backlog](implementation-backlog.md) breaks these requirements into dependency-ordered tasks, acceptance criteria, and verification steps. It tracks planned work, not implemented capabilities.
 
 The workspace currently contains documentation, Copilot agent definitions, and a sample CSV, not an implemented application, package scripts, database, or executable test suites. All application capabilities below are requirements, not claims of existing functionality.
 
@@ -26,6 +28,7 @@ Validate routing, API origins, authentication, and deployment constraints when s
 ### ACC-01: Accounts and Privacy
 
 - Invite-only email/password registration. An admin manages the shared exercise catalog; users manage only their own profile, gym, programs, drafts, and history.
+- Provision the first admin securely during setup. Admins generate expiring, single-use registration links and share them privately; automated email delivery is not required for the first release.
 - Secure password storage and server-side per-user authorization remain mandatory despite the small user count. Do not rely on hidden UI controls for access control.
 - Password reset and email verification are deferred. Never expose another user's training or account data.
 
@@ -51,6 +54,7 @@ The import reference is [the supplied MacroFactor CSV](../MacroFactor-2026092715
 
 - The first row contains program metadata; block markers and repeated `Cycle N` headers delimit groups.
 - Import **every cycle present** as a program week. The sample has five cycles; do not enforce six or seven weeks.
+- Each imported week and the manual deload must have exactly seven workout/rest day slots. Flag other counts in preview and block activation until corrected; this does not impose a fixed number of training weeks.
 - A named workout in the first column starts a workout day. Subsequent exercise rows with a blank first cell inherit that workout. Each `Rest` row creates a distinct program rest day.
 - Repeated set groups contain Type, Rep Range, RIR, and Rest. Empty trailing set groups mean no set, not an invalid zero-valued set.
 - Support Standard Set, Warmup, and Failure Set mappings. `N+` denotes a failure set with a recommended minimum of N reps and RIR 0; bounded ranges preserve their exact limits.
@@ -129,6 +133,7 @@ The import reference is [the supplied MacroFactor CSV](../MacroFactor-2026092715
 - Show Complete Workout only after every required set of every prescribed exercise is checked. Normal completion saves performance and checks the program day.
 - Discard requires confirmation, deletes the draft, creates no performance history, and does not advance the program.
 - Provide a confirmed Finish Early / Skip Remaining action for emergencies. Retain an exercise if **at least one working set is checked**, even when other sets/exercises are incomplete. Retain its checked sets only; discard unchecked logs and exercises with no completed working set.
+- Users may mark an individual exercise skipped and continue with later exercises. A workout containing a skipped exercise must use partial/emergency finishing, not normal completion; apply the same checked-working-set retention rule.
 - Retained checked working/failure sets contribute to history, suggestions, and metrics. Warmups never contribute to performance metrics. Mark the workout partial/skipped and resolve its program day so the week can advance.
 - A wholly skipped workout creates a calendar/program status event, not exercise-performance entries or metrics. Do not fabricate completed sets.
 
@@ -169,7 +174,7 @@ For display, estimated 1RM is `estimated1RM` itself, not `estimatedNRM` evaluate
 - Prefer the same load if a whole rep count fits the next prescription and target RIR. Otherwise use a feasible equipment load near the candidate at the range midpoint. For N+ failure sets, use N as the planning minimum and target RIR 0, without capping actual reps at N.
 - Preserve exact imported rep ranges, including those crossing training zones. Strength 1-6, hypertrophy 7-14, and endurance 15+ are context, not replacement prescriptions.
 - If performance is far below range, lower load rather than forcing an out-of-range rep target. If a smaller rep count at the same load remains in range and meets target RIR, prefer that before reducing load.
-- Respect gym increments/inventory. Limit suggested upward load changes to 10% of the previous same-exercise load; downward adjustment may exceed 10%. With no positive reference load, request manual input rather than applying a percentage to zero.
+- Respect gym increments/inventory. Limit suggested upward **effective resistance** changes to 10% of the latest checked same-exercise working set in the active session, or the latest retained historical working set when none exists. Use labeled historical corrections when seeding future suggestions. Downward adjustment may exceed 10%; nonpositive/missing reference resistance requires manual input. Apply this to effective resistance, not selected assistance, so more assistance is never mistaken for greater resistance.
 - Never silently leave the prescribed range or bypass load constraints to produce a suggestion. Explain when no feasible recommendation exists and require manual adjustment.
 - Mark estimates low-confidence above 15 reps. Keep actual performance separate from estimated RM values.
 
@@ -210,4 +215,13 @@ For display, estimated 1RM is `estimated1RM` itself, not `estimatedNRM` evaluate
 
 - Deferred: offline/PWA behavior, guaranteed background alerts, password reset/email verification, multiple concurrently selectable programs, and in-session exercise substitution with optional program updates.
 - Still needed as implementation inputs: admin-curated initial catalog, image assets/usage rights, muscle roles, bodyweight factors, machine ratios, and actual gym inventories. These are configuration/content dependencies, not permission to guess.
+- Neutral image placeholders may support development while approved assets are missing. Track real asset availability/rights and catalog ownership as launch-readiness dependencies. Missing validated factors or ratios must leave recommendations disabled for the affected exercise.
 - Before implementing a slice, turn the relevant requirement IDs into explicit test cases and numeric fixtures, including equipment rounding and boundary behavior. Record any remaining technical tie-break choices in tests; ask when they would change approved product behavior.
+
+## Delivery and Operational Acceptance
+
+- Target current iPhone Safari and Android Chrome, plus desktop Chrome/Safari. Check actual supported browser/device versions at implementation time and record them in release evidence; do not invent offline or background-alert guarantees.
+- Use the planned GitHub Pages/Render/Neon stack, validating routing, authentication, API origin configuration, and actual service limits. Do not assume free tiers satisfy availability requirements or silently purchase paid resources.
+- Include CI checks, repeatable migrations, safe seed data, environment/secrets documentation, deployment smoke tests, and a verified backup/restore procedure.
+- Treat catalog metadata/images/rights, validated factors/ratios, actual gym inventory, and named content ownership as readiness dependencies. Infrastructure work can proceed before these inputs are complete.
+- No fixed deadline or hosting budget was supplied. Record costs/availability constraints before live provisioning; do not present the backlog as a delivery-date commitment.

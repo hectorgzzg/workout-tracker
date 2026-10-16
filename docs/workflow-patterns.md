@@ -330,6 +330,8 @@ You: "Run lint again to verify."
 
 ## Product-Specific Delivery Order
 
+The [implementation backlog](implementation-backlog.md) is the task-level execution plan: WT-001 through WT-032, with dependencies, requirement links, acceptance criteria, and verification steps. Start at WT-001 and update task evidence/status as work is completed. The stages below are an overview, not a replacement for those cards.
+
 Build vertical slices using the same test-first cycle; this is an implementation order, not a reduction of first-release scope:
 
 1. Establish the Vue/Express test infrastructure, invite-only identity, authorization, and isolated test database.
