@@ -4,7 +4,7 @@
 
 Created 2026-10-16 from the [canonical specification](project-overview.md). This is the repository's implementation task backlog, not a claim that the application exists. No task below has been implemented or verified. GitHub issues have not been created; these stable task IDs can be used when issues are created later.
 
-**Status for WT-001 through WT-032: Not started.** Start with WT-001. The ordered cards form a completion-dependency graph; independent work may proceed once prerequisites are met. Collect content for WT-029 early, even though its final readiness check depends on implemented settings.
+**Status: WT-001 complete; WT-002 through WT-032 not started.** The ordered cards form a completion-dependency graph; independent work may proceed once prerequisites are met. Collect content for WT-029 early, even though its final readiness check depends on implemented settings.
 
 Scope includes all approved first-release features. Deferred functionality remains deferred: offline/PWA guarantees, password reset/verification, multiple current programs, guaranteed background alerts, and in-session exercise substitution/structural edits.
 
@@ -37,6 +37,7 @@ Scope includes all approved first-release features. Deferred functionality remai
 **Owner:** tdd-developer.
 **Acceptance:** Create the Vue/Pinia/Router/PrimeVue frontend and Express backend workspaces, shared package management/lockfile, supported Node version, lint/format configuration, and ignore rules. Document actual setup/start commands and safe environment-variable examples. Decide necessary tooling conservatively and record it; no feature implementation or secrets in scaffolding.
 **Verification:** Clean dependency installation, frontend build, backend health/start smoke check, and lint/configuration checks. Load a minimal frontend without errors; this is not feature acceptance.
+**WT-001 evidence (2026-10-16):** `npm ci` completed from the shared lockfile with zero reported vulnerabilities. `npm run lint`, `npm run format:check`, and `npm run build` passed. `npm run dev` started both workspaces; `/health` returned `{"status":"ok"}`. Headless Chrome rendered the Vue baseline without console/resource errors. `PORT=3101 npm run start:backend` honored the environment override and returned healthy on that port. No feature tests apply to this infrastructure-only card.
 
 ### WT-002: Establish isolated automated test infrastructure
 

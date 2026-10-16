@@ -1,0 +1,32 @@
+{
+  "name": "workout-tracker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0 <25"
+  },
+  "packageManager": "npm@11.6.1",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --run dev:servers",
+    "dev:servers": "concurrently --kill-others -n backend,frontend -c green,blue \"npm run dev --workspace=@workout-tracker/backend\" \"wait-on http://127.0.0.1:${PORT:-3000}/health && npm run dev --workspace=@workout-tracker/frontend\"",
+    "build": "npm run build --workspace=@workout-tracker/frontend",
+    "lint": "eslint .",
+    "format": "prettier --write \"packages/**/*.{js,json,vue}\" \"*.json\" \"*.js\" README.md",
+    "format:check": "prettier --check \"packages/**/*.{js,json,vue}\" \"*.json\" \"*.js\" README.md",
+    "start:backend": "npm run start --workspace=@workout-tracker/backend",
+    "start:frontend": "npm run dev --workspace=@workout-tracker/frontend"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^10.13.0",
+    "eslint-plugin-vue": "^10.5.1",
+    "globals": "^16.5.0",
+    "prettier": "^3.6.2",
+    "wait-on": "^8.0.5"
+  }
+}

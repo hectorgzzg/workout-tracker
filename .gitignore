@@ -1,1 +1,13 @@
 MacroFactor-20260927154219.csv
+
+# Dependencies and generated output
+node_modules/
+packages/*/dist/
+coverage/
+
+# Local environment and editor state
+.env
+.env.*
+!.env.example
+.DS_Store
+npm-debug.log*

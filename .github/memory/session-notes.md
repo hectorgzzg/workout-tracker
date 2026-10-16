@@ -137,3 +137,28 @@ Document completed development sessions here so future work can benefit from the
 
 - Structured checks passed for recorded decisions, 32 unique complete task cards, ordered acyclic dependencies, all 20 requirement mappings, and specification/backlog links.
 - All tasks remain not started. Documentation validation is not application test execution or production-readiness evidence.
+
+---
+
+### Session: WT-001 monorepo and local baseline
+
+**Date:** 2026-10-16
+
+#### What was accomplished
+
+- Created npm workspaces for the Vue frontend and Express backend, a shared lockfile, Node version constraints, lint/format configuration, ignore rules, safe local environment example, and setup documentation.
+- Initialized Vue with Pinia, Vue Router, and PrimeVue; added a minimal responsive baseline route and an Express `/health` endpoint.
+- Marked WT-001 complete with observed verification evidence; WT-002 through WT-032 remain not started.
+
+#### Key findings and decisions
+
+- Node 24.11.0/npm 11.6.1 were available locally. Node 24 is selected in `.nvmrc`; the declared supported range is Node 22.12+ below 25.
+- npm workspaces provide one install/lockfile and independent frontend/backend scripts without adding product or persistence scope.
+- ESLint 10.13.0 is supported by the selected Vue ESLint plugin; formatting checks only scaffold-owned source/config/readme files to avoid reformatting existing project memory.
+- The backend uses Node's native optional env-file loader for the safe root `.env` settings; credentials and production values are not included.
+
+#### Outcomes
+
+- `npm ci`, `npm run lint`, `npm run format:check`, and `npm run build` passed; npm reported zero vulnerabilities.
+- Live smoke checks passed for backend health, frontend document and transformed Vue modules, a port override, and headless Chrome rendering with no console/resource errors.
+- No product features or automated test infrastructure were added. The local combined dev server was left running at `http://127.0.0.1:5173/` with backend health at `http://127.0.0.1:3000/health`.

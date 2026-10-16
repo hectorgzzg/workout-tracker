@@ -8,6 +8,16 @@
     "/^ruby -e 'paths = %w\\[docs/project-overview\\.md docs/implementation-backlog\\.md docs/testing-guidelines\\.md docs/workflow-patterns\\.md \\.github/memory/session-notes\\.md\\]; task_ids = File\\.read\\(\"docs/implementation-backlog\\.md\"\\)\\.scan\\(/\\^### \\(WT-\\\\d\\{3\\}\\):/\\)\\.flatten; paths\\.each \\{ \\|path\\| text = File\\.read\\(path\\); text\\.scan\\(/\\\\\\]\\\\\\(\\(\\[\\^\\)\\]\\+\\)\\\\\\)/\\)\\.flatten\\.each \\{ \\|target\\| next if target\\.match\\?\\(/\\\\Ahttps\\?:/\\); local = target\\.split\\(\"#\"\\)\\.first; next if local\\.nil\\? \\|\\| local\\.empty\\?; abort \"Broken link #\\{target\\} in #\\{path\\}\" unless File\\.exist\\?\\(File\\.expand_path\\(local, File\\.dirname\\(path\\)\\)\\) \\}; text\\.scan\\(/WT-\\\\d\\{3\\}/\\)\\.each \\{ \\|identifier\\| abort \"Unknown task #\\{identifier\\} in #\\{path\\}\" unless task_ids\\.include\\?\\(identifier\\) \\} \\}; tests = File\\.read\\(\"docs/testing-guidelines\\.md\"\\); \\[\"seven day slots\", \"single-use invitation\", \"selected assistance\", \"partial/emergency\"\\]\\.each \\{ \\|term\\| abort \"Missing latest test target #\\{term\\}\" unless tests\\.include\\?\\(term\\) \\}; puts \"PASS: local links, task references, and latest planning test targets across all five updated documents\"'$/": {
       "approve": true,
       "matchCommandLine": true
-    }
+    },
+    "/^git status --short && node --version && npm --version && git ls-files$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "npm install": true,
+    "/^node --input-type=module -e 'const checks = \\[\\[\"backend health\", \"http://127\\.0\\.0\\.1:3000/health\", \\(body\\) => body\\.status === \"ok\"\\], \\[\"frontend document\", \"http://127\\.0\\.0\\.1:5173/\", \\(body\\) => body\\.includes\\(\"<title>Workout Tracker</title>\"\\)\\], \\[\"frontend entry module\", \"http://127\\.0\\.0\\.1:5173/src/main\\.js\", \\(body\\) => body\\.includes\\(\"createApp\"\\) && body\\.includes\\(\"PrimeVue\"\\)\\], \\[\"frontend route component\", \"http://127\\.0\\.0\\.1:5173/src/views/HomeView\\.vue\", \\(body\\) => body\\.includes\\(\"Training, kept simple\\.\"\\)\\]\\]; for \\(const \\[name, url, verify\\] of checks\\) \\{ const response = await fetch\\(url\\); if \\(!response\\.ok\\) throw new Error\\(`\\$\\{name\\}: HTTP \\$\\{response\\.status\\}`\\); const body = url\\.endsWith\\(\"/health\"\\) \\? await response\\.json\\(\\) : await response\\.text\\(\\); if \\(!verify\\(body\\)\\) throw new Error\\(`\\$\\{name\\}: unexpected response`\\); console\\.log\\(`\\$\\{name\\}: OK`\\); \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "npx prettier": true
   }
 }
