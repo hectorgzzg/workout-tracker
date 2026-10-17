@@ -4,7 +4,7 @@
 
 Created 2026-10-16 from the [canonical specification](project-overview.md). This is the repository's implementation task backlog, not a claim that the application exists. Task implementation and verification status is recorded below; evidence applies only to the checks listed. GitHub issues have not been created; these stable task IDs can be used when issues are created later.
 
-**Status: WT-001 and WT-002 complete; WT-003 through WT-032 not started.** The ordered cards form a completion-dependency graph; independent work may proceed once prerequisites are met. Collect content for WT-029 early, even though its final readiness check depends on implemented settings.
+**Status: WT-001 through WT-003 complete; WT-004 through WT-032 not started.** The ordered cards form a completion-dependency graph; independent work may proceed once prerequisites are met. Collect content for WT-029 early, even though its final readiness check depends on implemented settings.
 
 Scope includes all approved first-release features. Deferred functionality remains deferred: offline/PWA guarantees, password reset/verification, multiple current programs, guaranteed background alerts, and in-session exercise substitution/structural edits.
 
@@ -55,6 +55,7 @@ Scope includes all approved first-release features. Deferred functionality remai
 **Owner:** tdd-developer.
 **Acceptance:** Define schema/API boundaries for users/roles, settings/catalog, program templates/run slots, drafts, original performance, and separate corrections. Add repeatable migrations and safe development/test seeds, foreign keys/ownership constraints, and a canonical-load representation. Add later feature tables/fields incrementally rather than treating the first schema as final.
 **Verification:** Migrate a fresh isolated database; exercise constraints and relationships; prove user ownership, run identity, and original-vs-correction separation in integration tests. Re-run the migration/seed workflow without duplicate seed records.
+**WT-003 evidence (2026-10-16):** Added PostgreSQL `pg` pool, transactional/advisory-locked SQL migrations, guarded `db:migrate`/`db:seed` commands, and a first incremental schema for profiles/gyms/equipment, catalog and per-exercise unit overrides, program templates and distinct run slots, sessions/snapshots, canonical kg loads, and separate corrections. PostgreSQL-engine tests use a fresh PGlite database per test and pass repeatable migration/seed, cross-user FK rejection, run identity and session/run-day consistency, retained-performance date uniqueness, finished-set immutability, and original/correction separation scenarios. `npm test -- --runInBand packages/backend/test/persistence` passed 4 suites / 16 tests. No local PostgreSQL server was installed, so connection to an external/local server was not exercised; add subsequent feature schema as new migrations.
 
 ### WT-004: Establish continuous integration and configuration checks
 

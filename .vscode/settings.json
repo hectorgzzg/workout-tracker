@@ -47,6 +47,9 @@
       "approve": true,
       "matchCommandLine": true
     },
-    "lsof": true
+    "lsof": true,
+    "command": true,
+    "true": true,
+    "brew": true
   }
 }

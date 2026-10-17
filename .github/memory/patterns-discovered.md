@@ -50,3 +50,15 @@ const set = await setService.findById(setId); // null when the set does not exis
 **Solution:** Require an explicit `TEST_DATABASE_URL` with the exact dedicated database name, reject that reserved database name if it also appears in `DATABASE_URL` regardless of host or URL alias, and call destructive cleanup only after validation. Register per-test cleanup callbacks and run them after each test in reverse registration order.
 
 **Related files:** `packages/backend/test/support/database.js`, `packages/backend/test/support/cleanup.js`, and `packages/backend/test/setup.js`.
+
+---
+
+## PostgreSQL migration and ownership boundary
+
+**Context:** Incremental persistence schema for user-owned workout data and historical performance.
+
+**Problem:** Application checks alone cannot prevent cross-user references, migration races, or accidental rewriting of finished performance.
+
+**Solution:** Keep ordered SQL migrations transactional with a PostgreSQL advisory lock and applied-migration ledger. Use composite `(user_id, id)` foreign keys for owned relationships, distinct template/run identities, canonical `_kg` load columns, and separate correction rows. Restrict seed commands to explicitly named local dev/test databases.
+
+**Related files:** `packages/backend/src/persistence/`, `packages/backend/migrations/001_workout_tracker.sql`, and `packages/backend/test/persistence/schema.test.js`.

@@ -183,3 +183,23 @@ Document completed development sessions here so future work can benefit from the
 - Backend, frontend, and browser harnesses each caught a deliberate assertion failure and passed after the expected assertion was restored. The browser smoke passed three repeats with two workers and retries disabled, and retained screenshot/video/trace artifacts.
 - The cleanup guard initially allowed equivalent PostgreSQL URLs and then same database names on alternate hosts; regression tests reproduced both gaps. The guard now rejects any `DATABASE_URL` using the reserved test database name.
 - `npm test -- --maxWorkers=2` passed 5 suites / 9 tests; lint, formatting, frontend build, `npm ci --dry-run`, and `git diff --check` passed. `npm audit --omit=dev` reported no production dependency vulnerabilities. A full `npm ci` was not rerun because a pre-existing frontend process was using the current `node_modules`.
+
+### Session: WT-003 persistence and schema boundaries
+
+**Date:** 2026-10-16
+
+#### What was accomplished
+
+- Added the PostgreSQL runtime pool, transaction/advisory-locked migration runner and ledger, safe repeatable seed command, and first incremental SQL schema.
+- Added fresh PGlite-backed schema tests for migration/seed reruns, cross-user equipment ownership, program run slot identity, session/run-day consistency, immutable finished sets, and corrections stored separately from original values.
+- Documented local database commands and WT-003 verification evidence in the README/backlog.
+
+#### Key findings and decisions
+
+- No local PostgreSQL server, client, or Docker runtime was present. PGlite runs the PostgreSQL engine in-process for isolated schema behavior checks; connecting to a separate PostgreSQL service remains unverified.
+- All physical loads use explicitly named `_kg` columns. Corrections do not update original set columns; database triggers prevent finished set mutation.
+- The seed CLI accepts only `workout_tracker_dev` or `workout_tracker_test`, and rejects a test database name also used by `DATABASE_URL`.
+
+#### Outcomes
+
+- The persistence suite passed 4 suites / 16 tests after integrity tests first demonstrated invalid writes accepted by the initial schema, then passed after the FK/trigger repair. The existing `.vscode/settings.json` edit was preserved.
