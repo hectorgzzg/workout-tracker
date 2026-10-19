@@ -17,7 +17,7 @@ const migrationsDirectory = fileURLToPath(
 );
 const origin = "https://workout.example";
 
-describe("WT-005 authentication and authorization", () => {
+describe("WT-005 authentication and WT-006 onboarding", () => {
   let database;
   let pool;
   let app;
@@ -33,7 +33,8 @@ describe("WT-005 authentication and authorization", () => {
           async query(statement, parameters) {
             if (
               statement.startsWith("CREATE TABLE users (") ||
-              statement.startsWith("ALTER TABLE users")
+              statement.startsWith("ALTER TABLE users") ||
+              statement.startsWith("CREATE TABLE registration_invitations")
             ) {
               await database.exec(statement);
               return { rows: [] };
@@ -88,6 +89,23 @@ describe("WT-005 authentication and authorization", () => {
     return response.headers["set-cookie"][0].split(";")[0];
   }
 
+  async function createInvitation() {
+    const signedInAdmin = await signIn(admin);
+    return request(app)
+      .post("/api/admin/invitations")
+      .set("Origin", origin)
+      .set("Cookie", cookieFrom(signedInAdmin));
+  }
+
+  async function registerWith(token, email = "new@example.test") {
+    return request(app).post("/api/auth/register").set("Origin", origin).send({
+      token,
+      email,
+      password: "A-strong-password-123",
+      displayName: "New Member",
+    });
+  }
+
   test("logs in with a case-insensitive email and issues an opaque secure cookie", async () => {
     const response = await request(app)
       .post("/api/auth/login")
@@ -137,6 +155,235 @@ describe("WT-005 authentication and authorization", () => {
     expect(response.body).toEqual({
       error: "Valid email and password required",
     });
+  });
+
+  test("allows only admins to create invitations and stores only token hashes", async () => {
+    const unauthenticated = await request(app)
+      .post("/api/admin/invitations")
+      .set("Origin", origin);
+    expect(unauthenticated.status).toBe(401);
+
+    const signedInMember = await signIn(member);
+    const denied = await request(app)
+      .post("/api/admin/invitations")
+      .set("Origin", origin)
+      .set("Cookie", cookieFrom(signedInMember));
+    expect(denied.status).toBe(403);
+
+    const response = await createInvitation();
+    expect(response.status).toBe(201);
+    const registrationUrl = new URL(response.body.registrationUrl);
+    expect(registrationUrl.origin).toBe(origin);
+    const token = registrationUrl.searchParams.get("token");
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(response.body.expiresAt).toBeDefined();
+
+    const { rows } = await database.query(
+      "SELECT token_hash, expires_at FROM registration_invitations",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].token_hash).toBe(
+      createHash("sha256").update(token).digest("hex"),
+    );
+    expect(rows[0].token_hash).not.toBe(token);
+    const expiresIn = new Date(rows[0].expires_at).getTime() - Date.now();
+    expect(expiresIn).toBeGreaterThan(6 * 24 * 60 * 60 * 1000);
+    expect(expiresIn).toBeLessThanOrEqual(7 * 24 * 60 * 60 * 1000);
+  });
+
+  test("registers a member and profile from a valid invitation", async () => {
+    const invitation = await createInvitation();
+    const token = new URL(invitation.body.registrationUrl).searchParams.get(
+      "token",
+    );
+    const response = await registerWith(token);
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({
+      id: expect.any(String),
+      email: "new@example.test",
+      role: "member",
+      displayName: "New Member",
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(/password|token/i);
+    const { rows } = await database.query(
+      `SELECT users.password_hash, profiles.display_name
+       FROM users JOIN profiles ON profiles.user_id = users.id
+       WHERE users.email = $1`,
+      ["new@example.test"],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].password_hash).not.toBe("A-strong-password-123");
+    expect(rows[0].display_name).toBe("New Member");
+  });
+
+  test.each(["invalid", "expired", "redeemed"])(
+    "rejects an %s invitation without creating an account",
+    async (state) => {
+      let token = "invalid-registration-token";
+      if (state !== "invalid") {
+        const invitation = await createInvitation();
+        token = new URL(invitation.body.registrationUrl).searchParams.get(
+          "token",
+        );
+        if (state === "expired") {
+          await database.query(
+            `UPDATE registration_invitations
+             SET created_at = now() - interval '2 hours',
+                 expires_at = now() - interval '1 hour'`,
+          );
+        } else {
+          await registerWith(token, "first@example.test");
+        }
+      }
+
+      const response = await registerWith(token);
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: "Invalid or expired invitation",
+      });
+      const { rows } = await database.query(
+        "SELECT id FROM users WHERE email = $1",
+        ["new@example.test"],
+      );
+      expect(rows).toHaveLength(0);
+    },
+  );
+
+  test("does not consume an invitation when the email is already registered", async () => {
+    const invitation = await createInvitation();
+    const token = new URL(invitation.body.registrationUrl).searchParams.get(
+      "token",
+    );
+    const response = await registerWith(token, member.email);
+
+    expect(response.status).toBe(409);
+    const { rows } = await database.query(
+      "SELECT redeemed_at FROM registration_invitations",
+    );
+    expect(rows[0].redeemed_at).toBeNull();
+  });
+
+  test("allows only one concurrent registration to redeem an invitation", async () => {
+    const invitation = await createInvitation();
+    const token = new URL(invitation.body.registrationUrl).searchParams.get(
+      "token",
+    );
+    const responses = await Promise.all([
+      registerWith(token, "first@example.test"),
+      registerWith(token, "second@example.test"),
+    ]);
+
+    expect(responses.map(({ status }) => status).sort()).toEqual([201, 400]);
+    const { rows } = await database.query(
+      `SELECT count(*)::integer AS count FROM users
+       WHERE email IN ('first@example.test', 'second@example.test')`,
+    );
+    expect(rows[0].count).toBe(1);
+  });
+
+  test("rate-limits registration and invitation creation", async () => {
+    app = createApp({
+      pool,
+      allowedOrigins: [origin],
+      cookieSecure: false,
+      registrationRateLimit: { windowMs: 60_000, limit: 1 },
+      invitationRateLimit: { windowMs: 60_000, limit: 1 },
+    });
+    const registrationAttempt = () =>
+      request(app)
+        .post("/api/auth/register")
+        .set("Origin", origin)
+        .send({
+          token: "A".repeat(43),
+          email: "new@example.test",
+          password: "A-strong-password-123",
+        });
+    expect((await registrationAttempt()).status).toBe(400);
+    expect((await registrationAttempt()).status).toBe(429);
+
+    const signedInAdmin = await signIn(admin);
+    const invitationAttempt = () =>
+      request(app)
+        .post("/api/admin/invitations")
+        .set("Origin", origin)
+        .set("Cookie", cookieFrom(signedInAdmin));
+    expect((await invitationAttempt()).status).toBe(201);
+    expect((await invitationAttempt()).status).toBe(429);
+  });
+
+  test("validates account details before checking invitation state", async () => {
+    const response = await request(app)
+      .post("/api/auth/register")
+      .set("Origin", origin)
+      .send({
+        token: "A".repeat(43),
+        email: "not-an-email",
+        password: "short",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: "Valid invitation and account details required",
+    });
+  });
+
+  test("bootstraps only one initial admin and creates its profile", async () => {
+    await database.query("DELETE FROM users");
+    const { bootstrapInitialAdmin } = await import("../src/auth/bootstrap.js");
+    const result = await bootstrapInitialAdmin(pool, {
+      email: "first-admin@example.test",
+      password: "A-strong-password-123",
+      displayName: "First Admin",
+    });
+
+    expect(result).toEqual({
+      id: expect.any(String),
+      email: "first-admin@example.test",
+      role: "admin",
+      displayName: "First Admin",
+    });
+    await expect(
+      bootstrapInitialAdmin(pool, {
+        email: "second-admin@example.test",
+        password: "A-strong-password-123",
+        displayName: "Second Admin",
+      }),
+    ).rejects.toThrow("An admin account already exists");
+    const { rows } = await database.query(
+      `SELECT users.password_hash, profiles.display_name
+       FROM users JOIN profiles ON profiles.user_id = users.id
+       WHERE users.role = 'admin'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].password_hash).not.toBe("A-strong-password-123");
+    expect(rows[0].display_name).toBe("First Admin");
+  });
+
+  test("serializes concurrent attempts to provision the first admin", async () => {
+    await database.query("DELETE FROM users");
+    const { bootstrapInitialAdmin } = await import("../src/auth/bootstrap.js");
+    const attempts = await Promise.allSettled([
+      bootstrapInitialAdmin(pool, {
+        email: "first-admin@example.test",
+        password: "A-strong-password-123",
+      }),
+      bootstrapInitialAdmin(pool, {
+        email: "second-admin@example.test",
+        password: "A-strong-password-123",
+      }),
+    ]);
+
+    expect(
+      attempts.filter(({ status }) => status === "fulfilled"),
+    ).toHaveLength(1);
+    expect(attempts.filter(({ status }) => status === "rejected")).toHaveLength(
+      1,
+    );
+    const { rows } = await database.query(
+      "SELECT id FROM users WHERE role = 'admin'",
+    );
+    expect(rows).toHaveLength(1);
   });
 
   test("returns only the authenticated user's profile, ignoring another user id", async () => {

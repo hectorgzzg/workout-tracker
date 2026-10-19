@@ -58,6 +58,8 @@
     "/^node --input-type=module -e 'for \\(const url of \\[\"http://127\\.0\\.0\\.1:3101/health\", \"http://127\\.0\\.0\\.1:5174/\"\\]\\) \\{ try \\{ await fetch\\(url\\); throw new Error\\(`temporary test service still running at \\$\\{url\\}`\\); \\} catch \\(error\\) \\{ if \\(error\\.message\\.includes\\(\"still running\"\\)\\) throw error; \\} \\} console\\.log\\(\"temporary test ports are free\"\\);'$/": {
       "approve": true,
       "matchCommandLine": true
-    }
+    },
+    "npm run lint": true,
+    "npm run test:backend": true
   }
 }

@@ -66,6 +66,28 @@ process-local store from `express-rate-limit`; keep one backend instance until a
 shared limiter store is configured before scaling horizontally. Never log
 passwords, cookies, invitation tokens, or database credentials.
 
+Provision the first administrator from a trusted operator environment after
+migrations are applied. Set `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`
+in the environment or ignored local `.env` file, and optionally set
+`INITIAL_ADMIN_DISPLAY_NAME`. Do not pass the password as a command-line
+argument or commit these values. Run:
+
+```sh
+npm run auth:bootstrap-admin --workspace=@workout-tracker/backend
+```
+
+The command uses `DATABASE_URL`, creates the admin and profile atomically, and
+refuses to run once an admin exists. Passwords must contain 12-256 characters.
+
+Admins create private registration links through the authenticated API. Each
+link contains a random single-use token; only its SHA-256 hash is stored. Links
+expire after seven days by default. Set `INVITATION_TTL_HOURS` to an integer
+from 1 to 720 to change the lifetime. Registration requires a valid link and
+creates a member account/profile. Registration and invitation creation are
+rate-limited per client IP (10 per 15 minutes and 20 per hour by default).
+These use the process-local `express-rate-limit` store, so configure a shared
+store before running multiple backend instances.
+
 ## Checks
 
 ```sh
