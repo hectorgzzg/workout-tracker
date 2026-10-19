@@ -4,32 +4,32 @@ Use this file for the current, unfinished task. It is ignored by Git and is not 
 
 ## Current Task
 
-- WT-003: persistence, migrations, and domain boundaries complete.
+- WT-004: CI workflow configured; first hosted run pending.
 
 ## Approach
 
-- Added PostgreSQL connection/migration/seed boundaries and PostgreSQL-engine schema tests before updating WT-003 evidence.
+- Added GitHub Actions quality/Jest and Chromium smoke jobs, then checked the YAML and existing Playwright port configuration before running local quality gates.
 
 ## Key Findings
 
-- The PostgreSQL schema uses canonical kg load columns, user-scoped composite FKs, separate program run slot IDs, and separate finished-set corrections.
-- PGlite supplies isolated PostgreSQL-engine tests; no external PostgreSQL server is installed locally.
-- Seed commands accept only `workout_tracker_dev` / `workout_tracker_test` and reject an application/test database name collision.
+- CI uses locked installs, read-only repository permission, no secrets, and no `.env` / `.env.test` files.
+- Playwright starts its own servers on configured test ports; its smoke hits only backend health and static frontend content, with no PostgreSQL dependency.
+- PGlite provides isolated schema tests and leaves the existing WT-003 database untouched.
 
 ## Decisions Made
 
-- Keep future schema changes incremental in new numbered migration files; do not rewrite an applied migration.
+- Upload Playwright diagnostics only after browser-job failures and retain them for seven days; the existing smoke contains no personal workout data.
 - Preserve test-engineer ownership of Playwright authoring and execution.
 
 ## Blockers
 
-- A connection smoke against a separately installed PostgreSQL service remains pending; embedded PostgreSQL schema tests passed.
+- The first hosted GitHub Actions run is required before WT-004 can be marked complete.
 
 ## Next Steps
 
-- Continue with WT-004; add product tables incrementally as later requirement slices implement their behavior.
+- Run CI after the workflow is pushed; record the hosted result in the backlog.
 
 ## Notes
 
-- Final `npm test -- --maxWorkers=2`: 9 suites / 25 tests passed. Lint, format check, frontend build, and `git diff --check` passed.
-- Existing `.vscode/settings.json` user modification was preserved.
+- Invalid Playwright port config was rejected; default ports loaded. `npm run lint`, `npm run format:check`, `npm test -- --ci --runInBand` (9 suites / 25 tests), `npm run build`, and `git diff --check` passed.
+- Playwright itself was not run locally; its execution is owned by test-engineer and configured for the hosted browser job.

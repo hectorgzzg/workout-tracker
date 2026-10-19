@@ -203,3 +203,23 @@ Document completed development sessions here so future work can benefit from the
 #### Outcomes
 
 - The persistence suite passed 4 suites / 16 tests after integrity tests first demonstrated invalid writes accepted by the initial schema, then passed after the FK/trigger repair. The existing `.vscode/settings.json` edit was preserved.
+
+### Session: WT-004 CI and configuration checks
+
+**Date:** 2026-10-19
+
+#### What was accomplished
+
+- Added GitHub Actions jobs for lint, formatting, Jest backend/frontend tests, frontend build, and isolated Chromium browser smoke.
+- Documented that CI uses no repository secrets or local env files, does not connect to the WT-003 PostgreSQL database, and retains failure-only Playwright diagnostics for seven days.
+- Recorded CI setup and pending hosted-run status in the implementation backlog.
+
+#### Key findings and decisions
+
+- The browser smoke starts dedicated backend/frontend processes and exercises only `/health` and the static Home view; it needs no database connection or personal workout data.
+- Jest schema tests use isolated PGlite databases, so local validation does not depend on the already-configured WT-003 database.
+
+#### Outcomes
+
+- Workflow YAML/config assertions, invalid/default Playwright port checks, lint, formatting, all 9 Jest suites / 25 tests, frontend build, editor diagnostics, and `git diff --check` passed.
+- Playwright execution and the first hosted GitHub Actions run remain pending; local checks are not recorded as CI evidence.

@@ -50,6 +50,10 @@
     "lsof": true,
     "command": true,
     "true": true,
-    "brew": true
+    "brew": true,
+    "/^ruby -e 'require \"yaml\"; workflow = YAML\\.load_file\\(\"\\.github/workflows/ci\\.yml\"\\); abort \"missing CI jobs\" unless workflow\\.fetch\\(\"jobs\"\\)\\.keys\\.sort == \\[\"browser-smoke\", \"quality-and-tests\"\\]; abort \"missing read-only permissions\" unless workflow\\.fetch\\(\"permissions\"\\)\\.fetch\\(\"contents\"\\) == \"read\"; puts \"CI workflow YAML parsed with both expected jobs and read-only permissions\"'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }

@@ -4,7 +4,7 @@
 
 Created 2026-10-16 from the [canonical specification](project-overview.md). This is the repository's implementation task backlog, not a claim that the application exists. Task implementation and verification status is recorded below; evidence applies only to the checks listed. GitHub issues have not been created; these stable task IDs can be used when issues are created later.
 
-**Status: WT-001 through WT-003 complete; WT-004 through WT-032 not started.** The ordered cards form a completion-dependency graph; independent work may proceed once prerequisites are met. Collect content for WT-029 early, even though its final readiness check depends on implemented settings.
+**Status: WT-001 through WT-003 complete; WT-004 CI configuration is implemented and awaiting its first hosted run; WT-005 through WT-032 not started.** The ordered cards form a completion-dependency graph; independent work may proceed once prerequisites are met. Collect content for WT-029 early, even though its final readiness check depends on implemented settings.
 
 Scope includes all approved first-release features. Deferred functionality remains deferred: offline/PWA guarantees, password reset/verification, multiple current programs, guaranteed background alerts, and in-session exercise substitution/structural edits.
 
@@ -64,6 +64,7 @@ Scope includes all approved first-release features. Deferred functionality remai
 **Owner:** tdd-developer; test-engineer for browser jobs.
 **Acceptance:** CI installs locked dependencies, checks lint/build, and executes unit/component/API and designated browser smoke tests with isolated services. Document secrets/environment boundaries and retain diagnostic artifacts without personal data. No live deployment is implied by a passing pull-request build.
 **Verification:** Confirm expected checks fail on a controlled broken assertion/configuration and pass after repair. Record the first actual CI run; local-only execution is not CI evidence.
+**WT-004 implementation (2026-10-19):** Added `.github/workflows/ci.yml` with independent quality/Jest and Playwright Chromium jobs, locked `npm ci` installs, read-only repository permissions, no secrets, isolated Playwright-managed services, and seven-day failure diagnostics. README documents CI environment and artifact boundaries. Locally confirmed the Playwright config rejects an invalid port and accepts its defaults. The first hosted CI run remains pending; do not mark this card complete until it is recorded.
 
 ### WT-005: Implement secure authentication and user authorization
 
