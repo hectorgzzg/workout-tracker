@@ -1,6 +1,6 @@
 # Workout Tracker
 
-Mobile-first workout tracking for a small invite-only group. This repository is being built incrementally; only the local frontend/backend baseline exists so far.
+Mobile-first workout tracking for a small invite-only group. This repository is being built incrementally; frontend/backend scaffolding and the PostgreSQL persistence foundation are in place, while workout features remain in progress.
 
 ## Requirements
 
@@ -50,6 +50,16 @@ npm run lint
 npm run format:check
 npm run build
 ```
+
+GitHub Actions runs these checks and the Jest suites on pushes to `main`, pull
+requests, and manual dispatch. A separate Chromium job starts its own backend
+and frontend through Playwright; it does not connect to PostgreSQL or deploy the
+application. CI requires no repository secrets and does not read `.env` or
+`.env.test`. Jest schema tests use isolated in-process PGlite databases. Keep
+real credentials out of test configuration and diagnostics. On browser-smoke
+failure, CI retains the Playwright report, screenshots, traces, and videos for
+seven days; the current smoke uses no personal workout data. Review test data
+before adding scenarios that could place personal data in these artifacts.
 
 ## Automated tests
 
