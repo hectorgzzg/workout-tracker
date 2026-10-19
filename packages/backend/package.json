@@ -8,6 +8,7 @@
     "start": "node --env-file-if-exists=../../.env src/server.js",
     "db:migrate": "node --env-file-if-exists=../../.env src/persistence/cli.js migrate",
     "db:seed": "node --env-file-if-exists=../../.env src/persistence/cli.js seed",
+    "auth:bootstrap-admin": "node --env-file-if-exists=../../.env src/persistence/cli.js bootstrap-admin",
     "test": "npm run test --workspace=workout-tracker -- --selectProjects backend"
   },
   "dependencies": {

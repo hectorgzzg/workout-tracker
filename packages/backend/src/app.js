@@ -1,9 +1,13 @@
+import { randomBytes } from "node:crypto";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { createDatabasePool } from "./persistence/pool.js";
 import {
   authenticate,
   createSession,
+  hashInvitationToken,
+  hashPassword,
+  requireRole,
   revokeSession,
   sessionCookie,
   verifyPassword,
@@ -47,6 +51,14 @@ function parseBoolean(value, name) {
   if (value === "true") return true;
   if (value === "false") return false;
   throw new Error(`${name} must be true or false`);
+}
+
+function parseInvitationTtlHours(value) {
+  const hours = Number(value ?? process.env.INVITATION_TTL_HOURS ?? 168);
+  if (!Number.isInteger(hours) || hours < 1 || hours > 720) {
+    throw new Error("INVITATION_TTL_HOURS must be an integer from 1 to 720");
+  }
+  return hours;
 }
 
 function createCorsMiddleware(allowedOrigins) {
@@ -121,6 +133,9 @@ export function createApp(options = {}) {
     (process.env.DATABASE_URL
       ? createDatabasePool({ connectionString: process.env.DATABASE_URL })
       : null);
+  const invitationTtlHours = parseInvitationTtlHours(
+    options.invitationTtlHours,
+  );
   const app = express();
   app.set("trust proxy", trustProxyHops);
   app.use("/api", createCorsMiddleware(allowedOrigins));
@@ -140,10 +155,153 @@ export function createApp(options = {}) {
       response.status(429).json({ error: "Too many login attempts" });
     },
   });
+  const registrationLimiter = rateLimit({
+    windowMs: options.registrationRateLimit?.windowMs ?? 15 * 60 * 1000,
+    limit: options.registrationRateLimit?.limit ?? 10,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    handler: (_request, response) => {
+      response.status(429).json({ error: "Too many registration attempts" });
+    },
+  });
+  const invitationLimiter = rateLimit({
+    windowMs: options.invitationRateLimit?.windowMs ?? 60 * 60 * 1000,
+    limit: options.invitationRateLimit?.limit ?? 20,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    handler: (_request, response) => {
+      response.status(429).json({ error: "Too many invitations created" });
+    },
+  });
 
   app.get("/health", (_request, response) => {
     response.json({ status: "ok" });
   });
+
+  app.post(
+    "/api/admin/invitations",
+    authenticate({ pool }),
+    requireRole("admin"),
+    invitationLimiter,
+    async (request, response) => {
+      if (!pool) {
+        response
+          .status(503)
+          .json({ error: "Authentication service unavailable" });
+        return;
+      }
+
+      const token = randomBytes(32).toString("base64url");
+      const { rows } = await pool.query(
+        `INSERT INTO registration_invitations
+           (created_by, token_hash, expires_at)
+         VALUES ($1, $2, now() + ($3 * interval '1 hour'))
+         RETURNING expires_at`,
+        [request.auth.userId, hashInvitationToken(token), invitationTtlHours],
+      );
+      const registrationUrl = new URL("/register", request.get("Origin"));
+      registrationUrl.searchParams.set("token", token);
+      response.status(201).json({
+        registrationUrl: registrationUrl.toString(),
+        expiresAt: rows[0].expires_at,
+      });
+    },
+  );
+
+  app.post(
+    "/api/auth/register",
+    registrationLimiter,
+    async (request, response) => {
+      const email =
+        typeof request.body?.email === "string"
+          ? request.body.email.trim().toLowerCase()
+          : "";
+      const password = request.body?.password;
+      const displayName =
+        typeof request.body?.displayName === "string"
+          ? request.body.displayName.trim()
+          : email.split("@")[0];
+      const token = request.body?.token;
+      if (
+        email.length > 254 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+        typeof password !== "string" ||
+        password.length < 12 ||
+        password.length > 256 ||
+        displayName.length < 1 ||
+        displayName.length > 80 ||
+        typeof token !== "string" ||
+        token.length === 0 ||
+        token.length > 256
+      ) {
+        response
+          .status(400)
+          .json({ error: "Valid invitation and account details required" });
+        return;
+      }
+      if (!pool) {
+        response
+          .status(503)
+          .json({ error: "Authentication service unavailable" });
+        return;
+      }
+
+      const passwordHash = await hashPassword(password);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const invitation = await client.query(
+          `SELECT id FROM registration_invitations
+           WHERE token_hash = $1 AND redeemed_at IS NULL AND expires_at > now()
+           FOR UPDATE`,
+          [hashInvitationToken(token)],
+        );
+        if (invitation.rows.length !== 1) {
+          await client.query("ROLLBACK");
+          response.status(400).json({ error: "Invalid or expired invitation" });
+          return;
+        }
+
+        const account = await client.query(
+          `INSERT INTO users (email, role, password_hash)
+           VALUES ($1, 'member', $2) RETURNING id, email`,
+          [email, passwordHash],
+        );
+        await client.query(
+          "INSERT INTO profiles (user_id, display_name) VALUES ($1, $2)",
+          [account.rows[0].id, displayName],
+        );
+        const redeemed = await client.query(
+          `UPDATE registration_invitations
+           SET redeemed_at = now(), redeemed_by = $2
+           WHERE id = $1 AND redeemed_at IS NULL AND expires_at > now()
+           RETURNING id`,
+          [invitation.rows[0].id, account.rows[0].id],
+        );
+        if (redeemed.rows.length !== 1) {
+          await client.query("ROLLBACK");
+          response.status(400).json({ error: "Invalid or expired invitation" });
+          return;
+        }
+        await client.query("COMMIT");
+        response.status(201).json({
+          id: account.rows[0].id,
+          email: account.rows[0].email,
+          role: "member",
+          displayName,
+        });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        if (error.code === "23505") {
+          response.status(409).json({ error: "Email is already registered" });
+          return;
+        }
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  );
 
   app.post("/api/auth/login", loginLimiter, async (request, response) => {
     const email =

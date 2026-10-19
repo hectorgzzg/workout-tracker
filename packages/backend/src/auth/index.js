@@ -31,6 +31,10 @@ export async function hashPassword(password) {
   ].join("$");
 }
 
+export function hashInvitationToken(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 export async function verifyPassword(password, encodedHash) {
   const parts = typeof encodedHash === "string" ? encodedHash.split("$") : [];
   const validParameters =

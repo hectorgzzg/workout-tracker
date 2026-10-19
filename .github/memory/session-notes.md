@@ -245,3 +245,24 @@ Document completed development sessions here so future work can benefit from the
 
 - The new API suite passed 13 tests; the full Jest suite passed 10 suites / 39 tests. Lint, formatting, frontend build, editor diagnostics, and `git diff --check` passed.
 - PGlite exercised the new migration and API persistence behavior; a separate PostgreSQL service and Playwright auth journey were not run.
+
+### Session: WT-006 admin bootstrap and invitation onboarding
+
+**Date:** 2026-10-19
+
+#### What was accomplished
+
+- Added an incremental invitation migration, a guarded CLI workflow for the first admin, admin-only invitation creation, and invitation-required member registration with profile creation.
+- Stored only SHA-256 invitation token hashes; redemption locks the invitation row and commits account/profile creation and token consumption atomically.
+- Added signup/invitation rate limits, configurable invitation expiry, account validation, duplicate-email rollback, README setup guidance, and API/database tests.
+
+#### Key findings and decisions
+
+- First-admin creation is operator-only through `auth:bootstrap-admin`; a PostgreSQL advisory transaction lock ensures concurrent bootstrap attempts cannot create multiple admins.
+- Invitation links use 32 random bytes, expire after seven days by default (configurable from 1 to 720 hours), and are single-use. Registration passwords require 12-256 characters.
+- PGlite API tests verified concurrent redemption/bootstrap and migration 003; the external PostgreSQL connection and invitation browser journey remain unverified.
+
+#### Outcomes
+
+- The focused auth/onboarding suite passed 24 tests; backend passed 9 suites / 49 tests; full Jest passed 10 suites / 50 tests.
+- Lint, formatting, frontend build, editor diagnostics, `git diff --check`, and a no-database bootstrap CLI guard smoke passed. The test-engineer browser journey remains pending WT-007 UI routes.
