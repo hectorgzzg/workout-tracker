@@ -8,4 +8,11 @@ describe("backend health endpoint", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ status: "ok" });
   });
+
+  test("rejects unauthenticated access to the current user's profile", async () => {
+    const response = await request(app).get("/api/profile");
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "Authentication required" });
+  });
 });

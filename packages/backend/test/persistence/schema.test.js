@@ -18,7 +18,10 @@ describe("WT-003 persistence schema", () => {
       async connect() {
         return {
           async query(statement, parameters) {
-            if (statement.startsWith("CREATE TABLE users (")) {
+            if (
+              statement.startsWith("CREATE TABLE users (") ||
+              statement.startsWith("ALTER TABLE users")
+            ) {
               await database.exec(statement);
               return { rows: [] };
             }
