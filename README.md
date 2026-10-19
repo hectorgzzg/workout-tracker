@@ -43,6 +43,29 @@ npm run db:seed --workspace=@workout-tracker/backend
 
 The seed command only accepts `workout_tracker_dev` or `workout_tracker_test`, and rejects a test URL that aliases `DATABASE_URL`. Migrations are transactional and safe to rerun. Add later schema changes as new ordered SQL migration files; do not edit an already-applied migration.
 
+## Authentication deployment
+
+WT-005 uses opaque, random session cookies; only SHA-256 token hashes are stored
+in PostgreSQL. Passwords use Node.js `scrypt`. The cookie is host-only,
+`HttpOnly`, and `SameSite=Lax`; production requires `Secure`. Configure
+`FRONTEND_ORIGINS` as a comma-separated list of exact origins (no paths or
+wildcards), and configure `TRUST_PROXY_HOPS` to match the trusted hosting proxy
+chain so login throttling sees client IPs.
+
+For the planned GitHub Pages + Render deployment and Safari support, use custom
+HTTPS subdomains under the same registrable domain, such as
+`app.example.com` and `api.example.com`. The cross-origin fetch must send
+credentials; the API returns credentialed CORS headers only for the configured
+frontend origin. Unsafe API methods require that exact `Origin`, providing the
+CSRF defense. The default `github.io` and `onrender.com` domains are cross-site;
+do not use them for cookie authentication in production. If same-site custom
+domains are unavailable, put the API behind a same-origin proxy instead.
+
+The default login limiter allows 10 attempts per IP per 15 minutes using the
+process-local store from `express-rate-limit`; keep one backend instance until a
+shared limiter store is configured before scaling horizontally. Never log
+passwords, cookies, invitation tokens, or database credentials.
+
 ## Checks
 
 ```sh
@@ -74,4 +97,5 @@ Jest runs backend tests in Node and Vue component tests in jsdom. WT-003 schema 
 
 Playwright starts the backend at `127.0.0.1:3101` and frontend at `127.0.0.1:5174`, then stops both after the run. Override ports with `PLAYWRIGHT_BACKEND_PORT` and `PLAYWRIGHT_FRONTEND_PORT` if a port is occupied; the runner never reuses an existing server. Install its browser once with `npx playwright install chromium`. Traces, screenshots, videos, and the HTML report are written under `test-results/` and `playwright-report/`; these outputs are ignored by Git. Browser specs belong to the test-engineer and should use separate browser contexts and test-owned data.
 
-The backend currently exposes only a process health endpoint; PostgreSQL schema/migration infrastructure is in place, while product APIs are implemented in later backlog tasks.
+The backend exposes health, login/logout, and the authenticated current-profile
+API. Other product APIs are implemented in later backlog tasks.

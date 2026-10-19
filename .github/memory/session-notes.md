@@ -223,3 +223,25 @@ Document completed development sessions here so future work can benefit from the
 
 - Workflow YAML/config assertions, invalid/default Playwright port checks, lint, formatting, all 9 Jest suites / 25 tests, frontend build, editor diagnostics, and `git diff --check` passed.
 - Playwright execution and the first hosted GitHub Actions run remain pending; local checks are not recorded as CI evidence.
+
+### Session: WT-005 authentication and authorization
+
+**Date:** 2026-10-19
+
+#### What was accomplished
+
+- Added an incremental authentication migration, secure password hashing, database-backed login sessions, logout/revocation, authenticated current-profile API, and reusable role/ownership middleware.
+- Added exact-origin credentialed CORS, mandatory Origin validation for unsafe API requests, input validation, safe errors, and login rate limiting.
+- Documented local auth configuration and the production same-site custom-domain or same-origin-proxy requirement; updated WT-005 verification evidence.
+
+#### Key findings and decisions
+
+- Passwords use Node `scrypt`; session cookies contain random opaque tokens while PostgreSQL stores only SHA-256 hashes. Sessions expire after 12 hours and logout revokes them server-side.
+- Production uses host-only `Secure; HttpOnly; SameSite=Lax` cookies. The planned default GitHub Pages and Render hostnames are cross-site and may fail under Safari third-party-cookie restrictions, so production requires same-site custom subdomains or a same-origin proxy.
+- The login limiter uses `express-rate-limit`'s process-local store. Keep one backend instance until a shared limiter store is adopted for horizontal scaling.
+- Invite-only registration/admin bootstrap remain WT-006; authentication UI remains WT-007. No reset or verification flow was introduced.
+
+#### Outcomes
+
+- The new API suite passed 13 tests; the full Jest suite passed 10 suites / 39 tests. Lint, formatting, frontend build, editor diagnostics, and `git diff --check` passed.
+- PGlite exercised the new migration and API persistence behavior; a separate PostgreSQL service and Playwright auth journey were not run.

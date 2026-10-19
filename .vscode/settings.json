@@ -54,6 +54,10 @@
     "/^ruby -e 'require \"yaml\"; workflow = YAML\\.load_file\\(\"\\.github/workflows/ci\\.yml\"\\); abort \"missing CI jobs\" unless workflow\\.fetch\\(\"jobs\"\\)\\.keys\\.sort == \\[\"browser-smoke\", \"quality-and-tests\"\\]; abort \"missing read-only permissions\" unless workflow\\.fetch\\(\"permissions\"\\)\\.fetch\\(\"contents\"\\) == \"read\"; puts \"CI workflow YAML parsed with both expected jobs and read-only permissions\"'$/": {
       "approve": true,
       "matchCommandLine": true
+    },
+    "/^node --input-type=module -e 'for \\(const url of \\[\"http://127\\.0\\.0\\.1:3101/health\", \"http://127\\.0\\.0\\.1:5174/\"\\]\\) \\{ try \\{ await fetch\\(url\\); throw new Error\\(`temporary test service still running at \\$\\{url\\}`\\); \\} catch \\(error\\) \\{ if \\(error\\.message\\.includes\\(\"still running\"\\)\\) throw error; \\} \\} console\\.log\\(\"temporary test ports are free\"\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
     }
   }
 }
