@@ -97,6 +97,11 @@ describe("WT-005 authentication and WT-006 onboarding", () => {
       .set("Cookie", cookieFrom(signedInAdmin));
   }
 
+  function invitationToken(registrationUrl) {
+    const url = new URL(registrationUrl);
+    return new URLSearchParams(url.hash.split("?")[1]).get("token");
+  }
+
   async function registerWith(token, email = "new@example.test") {
     return request(app).post("/api/auth/register").set("Origin", origin).send({
       token,
@@ -174,7 +179,8 @@ describe("WT-005 authentication and WT-006 onboarding", () => {
     expect(response.status).toBe(201);
     const registrationUrl = new URL(response.body.registrationUrl);
     expect(registrationUrl.origin).toBe(origin);
-    const token = registrationUrl.searchParams.get("token");
+    expect(registrationUrl.hash).toMatch(/^#\/register\?token=/);
+    const token = invitationToken(registrationUrl);
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(response.body.expiresAt).toBeDefined();
 
@@ -193,9 +199,7 @@ describe("WT-005 authentication and WT-006 onboarding", () => {
 
   test("registers a member and profile from a valid invitation", async () => {
     const invitation = await createInvitation();
-    const token = new URL(invitation.body.registrationUrl).searchParams.get(
-      "token",
-    );
+    const token = invitationToken(invitation.body.registrationUrl);
     const response = await registerWith(token);
 
     expect(response.status).toBe(201);
@@ -223,9 +227,7 @@ describe("WT-005 authentication and WT-006 onboarding", () => {
       let token = "invalid-registration-token";
       if (state !== "invalid") {
         const invitation = await createInvitation();
-        token = new URL(invitation.body.registrationUrl).searchParams.get(
-          "token",
-        );
+        token = invitationToken(invitation.body.registrationUrl);
         if (state === "expired") {
           await database.query(
             `UPDATE registration_invitations
@@ -252,9 +254,7 @@ describe("WT-005 authentication and WT-006 onboarding", () => {
 
   test("does not consume an invitation when the email is already registered", async () => {
     const invitation = await createInvitation();
-    const token = new URL(invitation.body.registrationUrl).searchParams.get(
-      "token",
-    );
+    const token = invitationToken(invitation.body.registrationUrl);
     const response = await registerWith(token, member.email);
 
     expect(response.status).toBe(409);
@@ -266,9 +266,7 @@ describe("WT-005 authentication and WT-006 onboarding", () => {
 
   test("allows only one concurrent registration to redeem an invitation", async () => {
     const invitation = await createInvitation();
-    const token = new URL(invitation.body.registrationUrl).searchParams.get(
-      "token",
-    );
+    const token = invitationToken(invitation.body.registrationUrl);
     const responses = await Promise.all([
       registerWith(token, "first@example.test"),
       registerWith(token, "second@example.test"),

@@ -60,6 +60,65 @@
       "matchCommandLine": true
     },
     "npm run lint": true,
-    "npm run test:backend": true
+    "npm run test:backend": true,
+    "npx eslint": true,
+    "/^node --input-type=module -e 'import \\{ existsSync, readFileSync \\} from \"node:fs\"; const path = \"\\.env\"; console\\.log\\(`\\.env exists: \\$\\{existsSync\\(path\\)\\}`\\); if \\(existsSync\\(path\\)\\) \\{ const values = Object\\.fromEntries\\(readFileSync\\(path, \"utf8\"\\)\\.split\\(/\\\\r\\?\\\\n/\\)\\.filter\\(\\(line\\) => /\\^\\(PORT\\|HOST\\|FRONTEND_ORIGINS\\)=/\\.test\\(line\\)\\)\\.map\\(\\(line\\) => \\{ const index = line\\.indexOf\\(\"=\"\\); return \\[line\\.slice\\(0, index\\), line\\.slice\\(index \\+ 1\\)\\]; \\}\\)\\); for \\(const key of \\[\"PORT\", \"HOST\", \"FRONTEND_ORIGINS\"\\]\\) console\\.log\\(`\\$\\{key\\}=\\$\\{values\\[key\\] \\?\\? \"\\(unset\\)\"\\}`\\); \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --input-type=module -e 'for \\(const url of \\[\"http://localhost:5173/\", \"http://localhost:5174/\", \"http://127\\.0\\.0\\.1:5173/\", \"http://127\\.0\\.0\\.1:5174/\", \"http://127\\.0\\.0\\.1:3000/health\"\\]\\) \\{ try \\{ const response = await fetch\\(url\\); console\\.log\\(`\\$\\{url\\} -> \\$\\{response\\.status\\}`\\); \\} catch \\{ console\\.log\\(`\\$\\{url\\} -> unavailable`\\); \\} \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --input-type=module -e 'import \\{ readFileSync \\} from \"node:fs\"; const line = readFileSync\\(\"\\.env\", \"utf8\"\\)\\.split\\(/\\\\r\\?\\\\n/\\)\\.find\\(\\(value\\) => value\\.startsWith\\(\"FRONTEND_ORIGINS=\"\\)\\); console\\.log\\(line \\?\\? \"FRONTEND_ORIGINS is unset\"\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --input-type=module -e 'for \\(const origin of \\[\"http://localhost:5174\", \"http://127\\.0\\.0\\.1:5174\"\\]\\) \\{ try \\{ const response = await fetch\\(\"http://127\\.0\\.0\\.1:3000/api/auth/login\", \\{ method: \"OPTIONS\", headers: \\{ Origin: origin, \"Access-Control-Request-Method\": \"POST\", \"Access-Control-Request-Headers\": \"content-type\" \\} \\}\\); console\\.log\\(`\\$\\{origin\\}: \\$\\{response\\.status\\}`\\); \\} catch \\(error\\) \\{ console\\.log\\(`\\$\\{origin\\}: unavailable \\(\\$\\{error\\.message\\}\\)`\\); \\} \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --input-type=module -e 'const response = await fetch\\(\"http://127\\.0\\.0\\.1:3000/api/auth/login\", \\{ method: \"POST\", headers: \\{ Origin: \"http://localhost:5174\", \"Content-Type\": \"application/json\" \\}, body: JSON\\.stringify\\(\\{ email: \"diagnostic-nonexistent@example\\.invalid\", password: \"not-a-real-password\" \\}\\) \\}\\); console\\.log\\(`login diagnostic: \\$\\{response\\.status\\} \\$\\{JSON\\.stringify\\(await response\\.json\\(\\)\\)\\}`\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --env-file-if-exists=\\.env --input-type=module -e 'import pg from \"pg\"; const \\{ Pool \\} = pg; const value = process\\.env\\.DATABASE_URL; if \\(!value\\) \\{ console\\.log\\(\"DATABASE_URL configured: no\"\\); process\\.exit\\(0\\); \\} const database = new URL\\(value\\); const localHost = \\[\"localhost\", \"127\\.0\\.0\\.1\", \"::1\"\\]\\.includes\\(database\\.hostname\\); const developmentDatabase = database\\.pathname === \"/workout_tracker_dev\"; console\\.log\\(`Local development database target: \\$\\{localHost && developmentDatabase \\? \"yes\" : \"no\"\\}`\\); if \\(!localHost \\|\\| !developmentDatabase\\) process\\.exit\\(0\\); const pool = new Pool\\(\\{ connectionString: value, connectionTimeoutMillis: 3000 \\}\\); try \\{ const result = await pool\\.query\\(\"SELECT to_regclass\\(\\\\\"public\\.users\\\\\"\\) AS users\"\\); console\\.log\\(`Database reachable: yes; users table: \\$\\{result\\.rows\\[0\\]\\.users \\? \"present\" : \"missing\"\\}`\\); \\} catch \\(error\\) \\{ console\\.log\\(`Database reachable: no; error code: \\$\\{error\\.code \\?\\? \"unknown\"\\}`\\); process\\.exitCode = 1; \\} finally \\{ await pool\\.end\\(\\); \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --env-file-if-exists=\\.env --input-type=module -e 'const value = process\\.env\\.DATABASE_URL; if \\(!value\\) \\{ console\\.log\\(\"DATABASE_URL: unset\"\\); process\\.exit\\(0\\); \\} const database = new URL\\(value\\); console\\.log\\(`PostgreSQL protocol: \\$\\{\\[\"postgres:\", \"postgresql:\"\\]\\.includes\\(database\\.protocol\\) \\? \"yes\" : \"no\"\\}`\\); console\\.log\\(`Local host: \\$\\{\\[\"localhost\", \"127\\.0\\.0\\.1\", \"::1\"\\]\\.includes\\(database\\.hostname\\) \\? \"yes\" : \"no\"\\}`\\); console\\.log\\(`Database name is workout_tracker_dev: \\$\\{database\\.pathname === \"/workout_tracker_dev\" \\? \"yes\" : \"no\"\\}`\\); console\\.log\\(`Credentials present: \\$\\{Boolean\\(database\\.username \\|\\| database\\.password\\) \\? \"yes \\(not shown\\)\" : \"no\"\\}`\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --env-file-if-exists=\\.env --input-type=module -e 'import pg from \"pg\"; const \\{ Pool \\} = pg; const value = process\\.env\\.DATABASE_URL; if \\(!value\\) \\{ console\\.log\\(\"DATABASE_URL configured: no\"\\); process\\.exit\\(0\\); \\} const pool = new Pool\\(\\{ connectionString: value, connectionTimeoutMillis: 5000, max: 1 \\}\\); try \\{ const result = await pool\\.query\\(\"SELECT to_regclass\\(\\\\u0027public\\.users\\\\u0027\\) AS users\"\\); console\\.log\\(`Database reachable: yes; users table: \\$\\{result\\.rows\\[0\\]\\.users \\? \"present\" : \"missing\"\\}`\\); \\} catch \\(error\\) \\{ console\\.log\\(`Database reachable: no; error code: \\$\\{error\\.code \\?\\? \"unknown\"\\}`\\); process\\.exitCode = 1; \\} finally \\{ await pool\\.end\\(\\); \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --env-file-if-exists=\\.env --input-type=module -e 'import pg from \"pg\"; const \\{ Pool \\} = pg; const pool = new Pool\\(\\{ connectionString: process\\.env\\.DATABASE_URL, connectionTimeoutMillis: 5000, max: 1 \\}\\); try \\{ const result = await pool\\.query\\(\"SELECT to_regclass\\(\\\\u0027public\\.users\\\\u0027\\) IS NOT NULL AS users, to_regclass\\(\\\\u0027public\\.auth_sessions\\\\u0027\\) IS NOT NULL AS sessions, to_regclass\\(\\\\u0027public\\.profiles\\\\u0027\\) IS NOT NULL AS profiles, has_table_privilege\\(current_user, \\\\u0027public\\.users\\\\u0027, \\\\u0027SELECT\\\\u0027\\) AS can_read_users, has_table_privilege\\(current_user, \\\\u0027public\\.auth_sessions\\\\u0027, \\\\u0027INSERT\\\\u0027\\) AS can_create_sessions, \\(SELECT count\\(\\*\\)::integer FROM information_schema\\.columns WHERE table_schema=\\\\u0027public\\\\u0027 AND table_name=\\\\u0027users\\\\u0027 AND column_name IN \\(\\\\u0027id\\\\u0027,\\\\u0027email\\\\u0027,\\\\u0027role\\\\u0027,\\\\u0027password_hash\\\\u0027\\)\\) AS login_columns\"\\); console\\.log\\(JSON\\.stringify\\(result\\.rows\\[0\\]\\)\\); \\} catch \\(error\\) \\{ console\\.log\\(`Schema/privilege check failed; code: \\$\\{error\\.code \\?\\? \"unknown\"\\}`\\); process\\.exitCode = 1; \\} finally \\{ await pool\\.end\\(\\); \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --env-file-if-exists=\\.env --input-type=module -e 'import pg from \"pg\"; const \\{ Pool \\} = pg; const pool = new Pool\\(\\{ connectionString: process\\.env\\.DATABASE_URL, connectionTimeoutMillis: 5000, max: 1 \\}\\); try \\{ const result = await pool\\.query\\(\"SELECT to_regclass\\(\\\\u0027public\\.users\\\\u0027\\) IS NOT NULL AS users, to_regclass\\(\\\\u0027public\\.profiles\\\\u0027\\) IS NOT NULL AS profiles, to_regclass\\(\\\\u0027public\\.auth_sessions\\\\u0027\\) IS NOT NULL AS auth_sessions, to_regclass\\(\\\\u0027public\\.schema_migrations\\\\u0027\\) IS NOT NULL AS schema_migrations, to_regclass\\(\\\\u0027public\\.registration_invitations\\\\u0027\\) IS NOT NULL AS registration_invitations\"\\); console\\.log\\(JSON\\.stringify\\(result\\.rows\\[0\\]\\)\\); if \\(result\\.rows\\[0\\]\\.schema_migrations\\) \\{ const migrations = await pool\\.query\\(\"SELECT name FROM schema_migrations ORDER BY name\"\\); console\\.log\\(`Applied migrations: \\$\\{migrations\\.rows\\.map\\(\\(row\\) => row\\.name\\)\\.join\\(\", \"\\)\\}`\\); \\} \\} catch \\(error\\) \\{ console\\.log\\(`Schema check failed; code: \\$\\{error\\.code \\?\\? \"unknown\"\\}`\\); process\\.exitCode = 1; \\} finally \\{ await pool\\.end\\(\\); \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "npm run db:migrate": true,
+    "/^node --env-file-if-exists=\\.env --input-type=module -e 'import pg from \"pg\"; const \\{ Pool \\} = pg; const pool = new Pool\\(\\{ connectionString: process\\.env\\.DATABASE_URL, connectionTimeoutMillis: 5000, max: 1 \\}\\); try \\{ const result = await pool\\.query\\(\"SELECT to_regclass\\(\\\\u0027public\\.auth_sessions\\\\u0027\\) IS NOT NULL AS auth_sessions, to_regclass\\(\\\\u0027public\\.registration_invitations\\\\u0027\\) IS NOT NULL AS registration_invitations\"\\); console\\.log\\(JSON\\.stringify\\(result\\.rows\\[0\\]\\)\\); \\} finally \\{ await pool\\.end\\(\\); \\} const response = await fetch\\(\"http://127\\.0\\.0\\.1:3000/api/auth/login\", \\{ method: \"POST\", headers: \\{ Origin: \"http://localhost:5174\", \"Content-Type\": \"application/json\" \\}, body: JSON\\.stringify\\(\\{ email: \"diagnostic-nonexistent@example\\.invalid\", password: \"not-a-real-password\" \\}\\) \\}\\); console\\.log\\(`synthetic login status: \\$\\{response\\.status\\}`\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --env-file-if-exists=\\.env --input-type=module -e 'import pg from \"pg\"; const \\{ Pool \\} = pg; const pool = new Pool\\(\\{ connectionString: process\\.env\\.DATABASE_URL, connectionTimeoutMillis: 5000, max: 1 \\}\\); try \\{ const result = await pool\\.query\\(\"SELECT EXISTS\\(SELECT 1 FROM users WHERE role = \\\\u0027admin\\\\u0027\\) AS admin_exists\"\\); console\\.log\\(`Admin account exists: \\$\\{result\\.rows\\[0\\]\\.admin_exists \\? \"yes\" : \"no\"\\}`\\); \\} catch \\(error\\) \\{ console\\.log\\(`Admin check failed; code: \\$\\{error\\.code \\?\\? \"unknown\"\\}`\\); process\\.exitCode = 1; \\} finally \\{ await pool\\.end\\(\\); \\} console\\.log\\(`Initial admin email configured: \\$\\{Boolean\\(process\\.env\\.INITIAL_ADMIN_EMAIL\\) \\? \"yes\" : \"no\"\\}`\\); console\\.log\\(`Initial admin password configured: \\$\\{Boolean\\(process\\.env\\.INITIAL_ADMIN_PASSWORD\\) \\? \"yes\" : \"no\"\\}`\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "npm run auth:bootstrap-admin": true,
+    "/^node --env-file-if-exists=\\.env --input-type=module -e 'for \\(const key of \\[\"INITIAL_ADMIN_EMAIL\", \"INITIAL_ADMIN_PASSWORD\", \"INITIAL_ADMIN_DISPLAY_NAME\"\\]\\) console\\.log\\(`\\$\\{key\\} configured: \\$\\{Boolean\\(process\\.env\\[key\\]\\) \\? \"yes\" : \"no\"\\}`\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --env-file-if-exists=\\.env --input-type=module -e 'const email = process\\.env\\.INITIAL_ADMIN_EMAIL \\?\\? \"\"; const password = process\\.env\\.INITIAL_ADMIN_PASSWORD \\?\\? \"\"; const name = process\\.env\\.INITIAL_ADMIN_DISPLAY_NAME \\?\\? \"\"; console\\.log\\(`Email valid: \\$\\{email\\.length <= 254 && /\\^\\[\\^\\\\s@\\]\\+@\\[\\^\\\\s@\\]\\+\\\\\\.\\[\\^\\\\s@\\]\\+\\$/\\.test\\(email\\) \\? \"yes\" : \"no\"\\}`\\); console\\.log\\(`Password length valid \\(12-256\\): \\$\\{password\\.length >= 12 && password\\.length <= 256 \\? \"yes\" : \"no\"\\}`\\); console\\.log\\(`Display name length valid \\(1-80\\): \\$\\{name\\.trim\\(\\)\\.length >= 1 && name\\.trim\\(\\)\\.length <= 80 \\? \"yes\" : \"no\"\\}`\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }

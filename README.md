@@ -1,6 +1,6 @@
 # Workout Tracker
 
-Mobile-first workout tracking for a small invite-only group. This repository is being built incrementally; frontend/backend scaffolding and the PostgreSQL persistence foundation are in place, while workout features remain in progress.
+Mobile-first workout tracking for a small invite-only group. The PostgreSQL foundation, secure invite-only accounts, and responsive application shell are in place; workout features remain in progress.
 
 ## Requirements
 
@@ -60,6 +60,13 @@ frontend origin. Unsafe API methods require that exact `Origin`, providing the
 CSRF defense. The default `github.io` and `onrender.com` domains are cross-site;
 do not use them for cookie authentication in production. If same-site custom
 domains are unavailable, put the API behind a same-origin proxy instead.
+
+The frontend uses hash-based routes so invitation links and refreshes work on
+static hosting without a rewrite rule. For a production static build, set
+`VITE_API_ORIGIN` to the API origin (for example, `https://api.example.com`)
+before building. During local Vite development, `/api` is proxied to
+`http://127.0.0.1:$PORT` (default port `3000`); set `VITE_API_PROXY_TARGET` to
+override that target when running the backend elsewhere.
 
 The default login limiter allows 10 attempts per IP per 15 minutes using the
 process-local store from `express-rate-limit`; keep one backend instance until a
