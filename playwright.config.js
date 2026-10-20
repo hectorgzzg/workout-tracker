@@ -58,6 +58,7 @@ export default defineConfig({
     {
       command: `npm run dev --workspace=@workout-tracker/frontend -- --host 127.0.0.1 --port ${frontendPort} --strictPort`,
       url: frontendBaseURL,
+      env: { VITE_API_PROXY_TARGET: backendBaseURL },
       reuseExistingServer: false,
       timeout: 30_000,
     },
