@@ -199,8 +199,8 @@ export function createApp(options = {}) {
          RETURNING expires_at`,
         [request.auth.userId, hashInvitationToken(token), invitationTtlHours],
       );
-      const registrationUrl = new URL("/register", request.get("Origin"));
-      registrationUrl.searchParams.set("token", token);
+      const registrationUrl = new URL("/", request.get("Origin"));
+      registrationUrl.hash = `/register?token=${token}`;
       response.status(201).json({
         registrationUrl: registrationUrl.toString(),
         expiresAt: rows[0].expires_at,

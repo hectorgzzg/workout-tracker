@@ -4,9 +4,12 @@ import Aura from "@primeuix/themes/aura";
 import { createApp } from "vue";
 import App from "./App.vue";
 import router from "./router.js";
+import { createAuthFacade } from "./auth.js";
 import "./style.css";
 
-createApp(App)
+const app = createApp(App);
+app.config.globalProperties.$auth = createAuthFacade(router);
+app
   .use(createPinia())
   .use(router)
   .use(PrimeVue, {

@@ -3,6 +3,7 @@ MacroFactor-20260927154219.csv
 # Dependencies and generated output
 node_modules/
 packages/*/dist/
+**/.vite/
 coverage/
 test-results/
 playwright-report/

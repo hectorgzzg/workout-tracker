@@ -4,7 +4,7 @@ import vue from "eslint-plugin-vue";
 
 export default [
   {
-    ignores: ["**/dist/**", "**/node_modules/**"],
+    ignores: ["**/dist/**", "**/node_modules/**", "**/.vite/**"],
   },
   js.configs.recommended,
   ...vue.configs["flat/recommended"],
@@ -20,6 +20,8 @@ export default [
       globals: { ...globals.browser, ...globals.jest },
     },
     rules: {
+      "vue/html-self-closing": "off",
+      "vue/max-attributes-per-line": "off",
       "vue/singleline-html-element-content-newline": "off",
     },
   },
