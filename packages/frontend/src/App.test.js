@@ -182,3 +182,27 @@ test("announces the initial session check while the profile request is pending",
     await screen.findByRole("heading", { name: "Sign in" }),
   ).toBeInTheDocument();
 });
+
+test("shows exercise catalog maintenance in navigation for admins", async () => {
+  authState.status = "authenticated";
+  authState.profile = {
+    id: "admin-1",
+    email: "admin@example.test",
+    role: "admin",
+    displayName: "Admin",
+  };
+  const router = createAppRouter(createMemoryHistory());
+  await router.push("/");
+  await router.isReady();
+
+  render(App, {
+    global: {
+      plugins: [router],
+      config: { globalProperties: { $auth: createAuthFacade(router) } },
+    },
+  });
+
+  expect(
+    screen.getByRole("link", { name: "Exercise catalog" }),
+  ).toHaveAttribute("href", "/admin/catalog");
+});

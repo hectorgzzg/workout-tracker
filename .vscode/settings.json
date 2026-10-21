@@ -119,6 +119,46 @@
     "/^node --env-file-if-exists=\\.env --input-type=module -e 'const email = process\\.env\\.INITIAL_ADMIN_EMAIL \\?\\? \"\"; const password = process\\.env\\.INITIAL_ADMIN_PASSWORD \\?\\? \"\"; const name = process\\.env\\.INITIAL_ADMIN_DISPLAY_NAME \\?\\? \"\"; console\\.log\\(`Email valid: \\$\\{email\\.length <= 254 && /\\^\\[\\^\\\\s@\\]\\+@\\[\\^\\\\s@\\]\\+\\\\\\.\\[\\^\\\\s@\\]\\+\\$/\\.test\\(email\\) \\? \"yes\" : \"no\"\\}`\\); console\\.log\\(`Password length valid \\(12-256\\): \\$\\{password\\.length >= 12 && password\\.length <= 256 \\? \"yes\" : \"no\"\\}`\\); console\\.log\\(`Display name length valid \\(1-80\\): \\$\\{name\\.trim\\(\\)\\.length >= 1 && name\\.trim\\(\\)\\.length <= 80 \\? \"yes\" : \"no\"\\}`\\);'$/": {
       "approve": true,
       "matchCommandLine": true
+    },
+    "/^node --input-type=module -e 'import \\{ createRequire \\} from \"node:module\"; const require = createRequire\\(import\\.meta\\.url\\); const transformer = require\\(\"@vue/vue3-jest\"\\); console\\.log\\(Object\\.keys\\(transformer\\)\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e 'const fs=require\\(\"node:fs\"\\); const path=require\\(\"node:path\"\\); const transformer=require\\(\"@vue/vue3-jest\"\\); const file=path\\.resolve\\(\"packages/frontend/src/views/CatalogView\\.vue\"\\); const output=transformer\\.process\\(fs\\.readFileSync\\(file,\"utf8\"\\),file,\\{config:\\{rootDir:process\\.cwd\\(\\),globals:\\{\\},transform:\\{\\},moduleNameMapper:\\{\\}\\}\\}\\); console\\.log\\(output\\.code\\.split\\(\"\\\\n\"\\)\\.map\\(\\(line,index\\)=>`\\$\\{index\\+1\\}: \\$\\{line\\}`\\)\\.filter\\(line=>line\\.includes\\(\"length\"\\)\\|\\|line\\.includes\\(\"muscleRoles\"\\)\\|\\|line\\.includes\\(\"entries\" \\)\\)\\.join\\(\"\\\\n\"\\)\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e 'const fs=require\\(\"node:fs\"\\); const path=require\\(\"node:path\"\\); const t=require\\(\"@vue/vue3-jest\"\\); const f=path\\.resolve\\(\"packages/frontend/src/views/CatalogView\\.vue\"\\); const c=t\\.process\\(fs\\.readFileSync\\(f,\"utf8\"\\),f,\\{config:\\{rootDir:process\\.cwd\\(\\),globals:\\{\\},transform:\\{\\},moduleNameMapper:\\{\\}\\}\\}\\)\\.code\\.split\\(\"\\\\n\"\\); console\\.log\\(c\\.slice\\(276,298\\)\\.join\\(\"\\\\n\"\\)\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e 'const fs=require\\(\"node:fs\"\\); const path=require\\(\"node:path\"\\); const t=require\\(\"@vue/vue3-jest\"\\); const f=path\\.resolve\\(\"packages/frontend/src/views/CatalogView\\.vue\"\\); const c=t\\.process\\(fs\\.readFileSync\\(f,\"utf8\"\\),f,\\{config:\\{rootDir:process\\.cwd\\(\\),globals:\\{\\},transform:\\{\\},moduleNameMapper:\\{\\}\\}\\}\\)\\.code\\.split\\(\"\\\\n\"\\); console\\.log\\(c\\.slice\\(125,175\\)\\.join\\(\"\\\\n\"\\)\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e 'const fs=require\\(\"node:fs\"\\); const path=require\\(\"node:path\"\\); const t=require\\(\"@vue/vue3-jest\"\\); const f=path\\.resolve\\(\"packages/frontend/src/views/CatalogView\\.vue\"\\); const c=t\\.process\\(fs\\.readFileSync\\(f,\"utf8\"\\),f,\\{config:\\{rootDir:process\\.cwd\\(\\),globals:\\{\\},transform:\\{\\},moduleNameMapper:\\{\\}\\}\\}\\)\\.code\\.split\\(\"\\\\n\"\\); console\\.log\\(c\\.slice\\(0,85\\)\\.join\\(\"\\\\n\"\\)\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e 'const fs=require\\(\"node:fs\"\\); const path=require\\(\"node:path\"\\); const t=require\\(\"@vue/vue3-jest\"\\); const f=path\\.resolve\\(\"packages/frontend/src/views/CatalogView\\.vue\"\\); const c=t\\.process\\(fs\\.readFileSync\\(f,\"utf8\"\\),f,\\{config:\\{rootDir:process\\.cwd\\(\\),globals:\\{\\},transform:\\{\\},moduleNameMapper:\\{\\}\\}\\}\\)\\.code\\.split\\(\"\\\\n\"\\); console\\.log\\(c\\.slice\\(-35\\)\\.join\\(\"\\\\n\"\\)\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e 'const fs=require\\(\"node:fs\"\\); const path=require\\(\"node:path\"\\); const t=require\\(\"@vue/vue3-jest\"\\); const f=path\\.resolve\\(\"packages/frontend/src/views/CatalogView\\.vue\"\\); const c=t\\.process\\(fs\\.readFileSync\\(f,\"utf8\"\\),f,\\{config:\\{rootDir:process\\.cwd\\(\\),globals:\\{\\},transform:\\{\\},moduleNameMapper:\\{\\}\\}\\}\\)\\.code\\.split\\(\"\\\\n\"\\); console\\.log\\(c\\.slice\\(0,105\\)\\.join\\(\"\\\\n\"\\)\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e 'const fs=require\\(\"node:fs\"\\);const path=require\\(\"node:path\"\\);const Module=require\\(\"node:module\"\\);const t=require\\(\"@vue/vue3-jest\"\\);const f=path\\.resolve\\(\"packages/frontend/src/views/CatalogView\\.vue\"\\);const m=new Module\\(f,module\\);m\\.filename=f;m\\.paths=Module\\._nodeModulePaths\\(path\\.dirname\\(f\\)\\);m\\._compile\\(t\\.process\\(fs\\.readFileSync\\(f,\"utf8\"\\),f,\\{config:\\{rootDir:process\\.cwd\\(\\),globals:\\{\\},transform:\\{\\},moduleNameMapper:\\{\\}\\}\\}\\)\\.code,f\\);console\\.log\\(Object\\.keys\\(m\\.exports\\.default\\)\\);console\\.log\\(m\\.exports\\.default\\.data\\(\\)\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e 'const fs=require\\(\"node:fs\"\\);const path=require\\(\"node:path\"\\);const t=require\\(\"@vue/vue3-jest\"\\);const f=path\\.resolve\\(\"packages/frontend/src/views/CatalogView\\.vue\"\\);const c=t\\.process\\(fs\\.readFileSync\\(f,\"utf8\"\\),f,\\{config:\\{rootDir:process\\.cwd\\(\\),globals:\\{\\},transform:\\{\\},moduleNameMapper:\\{\\}\\}\\}\\)\\.code\\.split\\(\"\\\\n\"\\);console\\.log\\(c\\.slice\\(12,50\\)\\.join\\(\"\\\\n\"\\)\\);console\\.log\\(c\\.filter\\(x=>x\\.includes\\(\"catalogState\\.error\"\\)\\)\\.slice\\(0,3\\)\\.join\\(\"\\\\n\"\\)\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e 'const fs=require\\(\"node:fs\"\\);const path=require\\(\"node:path\"\\);const t=require\\(\"@vue/vue3-jest\"\\);const f=path\\.resolve\\(\"packages/frontend/src/views/CatalogView\\.vue\"\\);const c=t\\.process\\(fs\\.readFileSync\\(f,\"utf8\"\\),f,\\{config:\\{rootDir:process\\.cwd\\(\\),globals:\\{\\},transform:\\{\\},moduleNameMapper:\\{\\}\\}\\}\\)\\.code\\.split\\(\"\\\\n\"\\);console\\.log\\(c\\.map\\(\\(x,i\\)=>`\\$\\{i\\+1\\}:\\$\\{x\\}`\\)\\.filter\\(x=>x\\.includes\\(\"catalogState\"\\)\\|\\|x\\.includes\\(\"_ctx\"\\)\\)\\.slice\\(-12\\)\\.join\\(\"\\\\n\"\\)\\);'$/": {
+      "approve": true,
+      "matchCommandLine": true
     }
   }
 }

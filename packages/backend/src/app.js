@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import express from "express";
 import rateLimit from "express-rate-limit";
+import { createCatalogRouter } from "./catalog.js";
 import { createDatabasePool } from "./persistence/pool.js";
 import {
   authenticate,
@@ -140,6 +141,7 @@ export function createApp(options = {}) {
   app.set("trust proxy", trustProxyHops);
   app.use("/api", createCorsMiddleware(allowedOrigins));
   app.use(express.json({ limit: "16kb" }));
+  app.use("/api", createCatalogRouter({ pool }));
   app.use("/api", (_request, response, next) => {
     response.set("Cache-Control", "no-store");
     next();

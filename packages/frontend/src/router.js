@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import { nextTick } from "vue";
 import { authState, loadCurrentProfile } from "./auth.js";
+import CatalogView from "./views/CatalogView.vue";
 import FeatureView from "./views/FeatureView.vue";
 import HomeView from "./views/HomeView.vue";
 import LoginView from "./views/LoginView.vue";
@@ -100,6 +101,12 @@ export function createAppRouter(
         },
       },
       {
+        path: "/admin/catalog",
+        name: "admin-catalog",
+        component: CatalogView,
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
         path: "/:pathMatch(.*)*",
         name: "not-found",
         component: FeatureView,
@@ -119,6 +126,9 @@ export function createAppRouter(
     }
     if (to.meta.requiresAuth && authState.status !== "authenticated") {
       return { name: "login", query: { redirect: to.fullPath } };
+    }
+    if (to.meta.requiresAdmin && authState.profile?.role !== "admin") {
+      return { name: "home" };
     }
     if (to.meta.publicOnly && authState.status === "authenticated") {
       return { name: "home" };

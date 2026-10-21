@@ -7,6 +7,9 @@ import router from "./router.js";
 import { createAuthFacade } from "./auth.js";
 import "./style.css";
 
+globalThis.__WORKOUT_TRACKER_API_ORIGIN__ =
+  import.meta.env?.VITE_API_ORIGIN ?? "";
+
 const app = createApp(App);
 app.config.globalProperties.$auth = createAuthFacade(router);
 app

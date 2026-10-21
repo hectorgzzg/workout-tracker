@@ -66,6 +66,13 @@
           >
             Settings
           </RouterLink>
+          <RouterLink
+            v-if="$auth.state.profile?.role === 'admin'"
+            to="/admin/catalog"
+            :aria-current="$route.name === 'admin-catalog' ? 'page' : undefined"
+          >
+            Exercise catalog
+          </RouterLink>
         </nav>
         <main id="main-content" class="main-content" tabindex="-1">
           <p
