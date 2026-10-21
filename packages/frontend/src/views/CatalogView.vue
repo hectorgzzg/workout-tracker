@@ -85,6 +85,9 @@ export default {
     numericOrNull(value) {
       return value === "" ? null : Number(value);
     },
+    restCategoryLabel(category) {
+      return category.replaceAll("_", " ");
+    },
     entryPayload() {
       const form = this.catalogState.form;
       const imageUrl = form.imageUrl.trim();
@@ -221,8 +224,8 @@ export default {
                 <p class="catalog-item__meta">
                   {{ entry.equipment }} · {{ entry.loadType }}
                   <span v-if="entry.restCategory">
-                    · {{ entry.restCategory.replaceAll("_", " ") }}</span
-                  >
+                    · {{ restCategoryLabel(entry.restCategory) }}
+                  </span>
                 </p>
                 <p v-if="!entry.image" class="catalog-item__meta">
                   Image not supplied
@@ -241,10 +244,11 @@ export default {
                   v-if="entry.image?.credit || entry.image?.license"
                   class="catalog-item__meta"
                 >
-                  {{ entry.image.credit
-                  }}<span v-if="entry.image.credit && entry.image.license">
-                    · </span
-                  >{{ entry.image.license }}
+                  <span>{{ entry.image.credit }}</span>
+                  <span v-if="entry.image.credit && entry.image.license">
+                    ·
+                  </span>
+                  <span>{{ entry.image.license }}</span>
                 </p>
                 <button
                   class="button button--quiet"

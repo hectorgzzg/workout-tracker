@@ -1,11 +1,13 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import { nextTick } from "vue";
 import { authState, loadCurrentProfile } from "./auth.js";
-import CatalogView from "./views/CatalogView.vue";
+import catalogViewModule from "./views/CatalogView.vue";
 import FeatureView from "./views/FeatureView.vue";
 import HomeView from "./views/HomeView.vue";
 import LoginView from "./views/LoginView.vue";
 import RegisterView from "./views/RegisterView.vue";
+
+const CatalogView = catalogViewModule.default ?? catalogViewModule;
 
 export function createAppRouter(
   history = createWebHashHistory(import.meta.env?.BASE_URL ?? "/"),

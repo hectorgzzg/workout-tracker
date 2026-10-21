@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/vue";
 import { afterEach, beforeEach, jest } from "@jest/globals";
-import CatalogView from "./CatalogView.vue";
+import catalogViewModule from "./CatalogView.vue";
+
+const CatalogView = catalogViewModule.default ?? catalogViewModule;
 
 const originalFetch = globalThis.fetch;
 
@@ -44,7 +46,7 @@ test("shows shared exercise identity, image placeholder, and muscle roles", asyn
   expect(
     await screen.findByRole("heading", { name: "Exercise catalog" }),
   ).toBeInTheDocument();
-  expect(screen.getByText("Barbell squat")).toBeInTheDocument();
+  expect(await screen.findByText("Barbell squat")).toBeInTheDocument();
   expect(screen.getByText("Primary: quadriceps")).toBeInTheDocument();
   expect(screen.getByText("Secondary: gluteus maximus")).toBeInTheDocument();
   expect(screen.getByText("Image not supplied")).toBeInTheDocument();

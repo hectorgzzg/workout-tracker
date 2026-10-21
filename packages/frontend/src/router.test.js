@@ -18,3 +18,16 @@ test.each([
     expect(router.currentRoute.value.name).toBe(expectedRoute);
   },
 );
+
+test("resolves the admin catalog route to its Vue component definition", async () => {
+  authState.status = "authenticated";
+  authState.profile = { role: "admin" };
+  const router = createAppRouter(createMemoryHistory());
+
+  await router.push("/admin/catalog");
+  await router.isReady();
+
+  expect(
+    router.currentRoute.value.matched[0].components.default,
+  ).toHaveProperty("setup");
+});
