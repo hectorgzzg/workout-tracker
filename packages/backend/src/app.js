@@ -3,6 +3,7 @@ import express from "express";
 import rateLimit from "express-rate-limit";
 import { createCatalogRouter } from "./catalog.js";
 import { createDatabasePool } from "./persistence/pool.js";
+import { createSettingsRouter } from "./settings.js";
 import {
   authenticate,
   createSession,
@@ -147,6 +148,7 @@ export function createApp(options = {}) {
     next();
   });
   app.use("/api", verifyRequestOrigin(allowedOrigins));
+  app.use("/api", createSettingsRouter({ pool }));
 
   const loginLimiter = rateLimit({
     windowMs: options.authRateLimit?.windowMs ?? 15 * 60 * 1000,

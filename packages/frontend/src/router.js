@@ -6,8 +6,10 @@ import FeatureView from "./views/FeatureView.vue";
 import HomeView from "./views/HomeView.vue";
 import LoginView from "./views/LoginView.vue";
 import RegisterView from "./views/RegisterView.vue";
+import settingsViewModule from "./views/SettingsView.vue";
 
 const CatalogView = catalogViewModule.default ?? catalogViewModule;
+const SettingsView = settingsViewModule.default ?? settingsViewModule;
 
 export function createAppRouter(
   history = createWebHashHistory(import.meta.env?.BASE_URL ?? "/"),
@@ -94,13 +96,8 @@ export function createAppRouter(
       {
         path: "/settings",
         name: "settings",
-        component: FeatureView,
-        meta: {
-          requiresAuth: true,
-          pageTitle: "Settings",
-          emptyTitle: "Your profile and gym",
-          pageMessage: "Profile and gym settings are not available yet.",
-        },
+        component: SettingsView,
+        meta: { requiresAuth: true },
       },
       {
         path: "/admin/catalog",
