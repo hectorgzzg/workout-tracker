@@ -266,3 +266,25 @@ Document completed development sessions here so future work can benefit from the
 
 - The focused auth/onboarding suite passed 24 tests; backend passed 9 suites / 49 tests; full Jest passed 10 suites / 50 tests.
 - Lint, formatting, frontend build, editor diagnostics, `git diff --check`, and a no-database bootstrap CLI guard smoke passed. The test-engineer browser journey remains pending WT-007 UI routes.
+
+### Session: WT-009 profile and gym settings
+
+**Date:** 2026-10-20
+
+#### What was accomplished
+
+- Added authenticated settings read/write endpoints for account profile fields, five configurable rest categories, and one editable user-owned gym.
+- Added validation and transactional replacement for gym equipment/dumbbell availability, bar weights, and plate inventory; routed the mobile-first Settings form to `/settings`.
+- Added API, component, and router regression coverage, and recorded WT-009 implementation evidence in the backlog.
+
+#### Key findings and decisions
+
+- The existing schema already covered WT-009, including canonical kg columns and a database uniqueness constraint for one gym per user, so no migration was needed.
+- Settings writes use the authenticated user ID only and do not rewrite existing session snapshots. Profile email changes are conflict-checked by the unique email index.
+- Physical gym loads are entered in kg to match canonical persistence; account units remain a separate kg/lb default.
+
+#### Outcomes
+
+- API tests first observed `/api/settings` returning 404; implementation made all three API scenarios pass. Component and route tests also passed after their expected missing-view/placeholder RED.
+- `npm test -- --runInBand` passed 16 suites / 69 tests. Lint, formatting, frontend production build, editor diagnostics, and `git diff --check` passed.
+- Tests used isolated PGlite. A separate PostgreSQL service and Playwright/mobile/desktop browser checks were not run; the local app servers were already running and left untouched.

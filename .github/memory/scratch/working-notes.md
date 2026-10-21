@@ -4,7 +4,9 @@ Use this file for the current, unfinished task. It is ignored by Git and is not 
 
 ## Current Task
 
-- WT-006: secure initial-admin bootstrap and invitation onboarding.
+- WT-009: profile and gym settings.
+
+## Previous Task: WT-006
 
 ## Approach
 
@@ -38,3 +40,12 @@ Use this file for the current, unfinished task. It is ignored by Git and is not 
 - Invitation API RED returned 404. Bootstrap RED failed because the helper was absent. Focused API suite passed 24/24; backend passed 9 suites / 49 tests; full Jest passed 10 suites / 50 tests.
 - Lint, formatting, build, editor diagnostics, and `git diff --check` passed. CLI guard smoke stopped safely without `DATABASE_URL`.
 - No Playwright tests were authored or run; browser testing remains owned by test-engineer and depends on WT-007 UI routes.
+
+### WT-009 findings (2026-10-20)
+
+- Existing schema already contained profiles, one gym per user, equipment, bars, plates, and canonical kg columns; no migration was required.
+- Added authenticated profile/gym settings endpoints. Inputs are normalized and validated before a transaction; the session user ID determines ownership; inventory replacement is transactional.
+- The Settings view uses canonical kg fields for physical gym inventory and profile kg/lb as the account default. It supports equipment/dumbbells, bars, plate quantities, all five rest categories, retry/error states, and updates the app auth facade after a successful save.
+- API RED was `/api/settings` returning 404; three backend integration cases then passed. Component and router RED confirmed the missing editor/placeholder route; focused component (2 tests) and router (4 tests) passed after implementation.
+- `npm test -- --runInBand`: 16 suites / 69 tests passed. Lint, format check, production build, editor diagnostics, and `git diff --check` passed. PGlite was used; external PostgreSQL and Playwright were not run.
+- Local frontend/backend already responded on ports 5173/3000 and were left untouched. `.vscode/settings.json` was already modified and was not changed for WT-009.

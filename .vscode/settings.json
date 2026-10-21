@@ -163,6 +163,10 @@
     "/^node --env-file-if-exists=\\.env --input-type=module -e 'const raw = process\\.env\\.DATABASE_URL; if \\(!raw\\) \\{ console\\.log\\(\"DATABASE_URL is not configured\"\\); process\\.exit\\(0\\); \\} const url = new URL\\(raw\\); const local = \\[\"localhost\", \"127\\.0\\.0\\.1\", \"::1\", \"\\[::1\\]\"\\]\\.includes\\(url\\.hostname\\); console\\.log\\(`DATABASE_URL configured; target is \\$\\{local \\? \"local\" : \"non-local\"\\}`\\); if \\(!local\\) process\\.exit\\(0\\); const \\{ Pool \\} = await import\\(\"pg\"\\); const pool = new Pool\\(\\{ connectionString: raw \\}\\); try \\{ const result = await pool\\.query\\(\"SELECT name FROM schema_migrations ORDER BY name\"\\); console\\.log\\(`Applied migrations: \\$\\{result\\.rows\\.map\\(\\(row\\) => row\\.name\\)\\.join\\(\", \"\\) \\|\\| \"none\"\\}`\\); \\} catch \\(error\\) \\{ console\\.log\\(`Migration status query failed: \\$\\{error\\.code \\?\\? error\\.message\\}`\\); \\} finally \\{ await pool\\.end\\(\\); \\}'$/": {
       "approve": true,
       "matchCommandLine": true
+    },
+    "/^git status --short && git diff --stat && node --input-type=module -e 'for \\(const url of \\[\"http://127\\.0\\.0\\.1:3000/health\", \"http://127\\.0\\.0\\.1:5173/\"\\]\\) \\{ try \\{ const response = await fetch\\(url\\); console\\.log\\(`\\$\\{url\\} \\$\\{response\\.status\\}`\\); \\} catch \\{ console\\.log\\(`\\$\\{url\\} unavailable`\\); \\} \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
     }
   }
 }
