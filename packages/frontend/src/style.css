@@ -1008,6 +1008,430 @@ h2 {
   max-width: 620px;
 }
 
+.home-calendar {
+  min-width: 0;
+  margin-top: 24px;
+  padding: 18px 0 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.calendar-heading,
+.calendar-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.calendar-heading h2,
+.program-ribbon__title h2,
+.workout-targets h2,
+.workout-exercises h2 {
+  margin: 0;
+  font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.calendar-heading .eyebrow,
+.program-ribbon .eyebrow {
+  margin-bottom: 5px;
+}
+
+.calendar-controls {
+  flex: 0 0 auto;
+}
+
+.calendar-arrow,
+.calendar-toggle {
+  display: inline-grid;
+  min-width: 40px;
+  min-height: 40px;
+  place-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--paper);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.calendar-arrow {
+  font-size: 1.35rem;
+}
+
+.calendar-toggle {
+  min-width: 64px;
+  color: var(--green);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.calendar-day {
+  display: grid;
+  min-width: 0;
+  min-height: 58px;
+  align-content: start;
+  justify-items: center;
+  gap: 3px;
+  padding: 7px 2px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--ink);
+  text-align: center;
+}
+
+.calendar-day__weekday,
+.calendar-day__today {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.calendar-day__number {
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-day__today {
+  color: var(--green);
+  font-size: 0.58rem;
+}
+
+.calendar-day--outside {
+  color: #909990;
+  opacity: 0.58;
+}
+
+.calendar-day:has(.calendar-day__today) {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+.calendar-grid--month .calendar-day {
+  min-height: 46px;
+  padding-top: 5px;
+}
+
+.calendar-grid--month .calendar-day__weekday {
+  font-size: 0.62rem;
+}
+
+.home-loading {
+  margin: 20px 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.home-empty .button {
+  margin-top: 16px;
+  padding: 0 14px;
+}
+
+.program-ribbon {
+  min-width: 0;
+  margin-top: 22px;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.program-ribbon__heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.program-ribbon__title {
+  min-width: 0;
+}
+
+.program-ribbon__title h2 {
+  max-width: 100%;
+  line-height: 1.35;
+}
+
+.program-ribbon__heading > .button {
+  min-width: 92px;
+  flex: 0 0 auto;
+}
+
+.program-ribbon__content {
+  margin-top: 14px;
+}
+
+.program-ribbon__days {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.program-slot {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid #e8ebe5;
+}
+
+.program-slot__number {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.program-slot__link {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  align-content: center;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+a.program-slot__link:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.program-slot__link strong {
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
+}
+
+.program-slot__link > span {
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.program-slot--completed .program-slot__number,
+.program-slot--rest-done .program-slot__number {
+  border-color: #699477;
+  color: #24543c;
+  background: #e7eee7;
+}
+
+.program-slot--partial .program-slot__number {
+  border-color: #b7812d;
+  color: #704c13;
+  background: #f7edd9;
+}
+
+.program-slot--skipped .program-slot__number {
+  border-color: #bd543f;
+  color: #8b382b;
+  background: #f8e9e4;
+}
+
+.program-slot--rest .program-slot__number {
+  border-style: dashed;
+}
+
+.workout-targets,
+.workout-exercises {
+  min-width: 0;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.workout-targets > p {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--green);
+  font-size: 0.94rem;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.muted-copy {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.workout-exercise-list {
+  display: grid;
+  gap: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workout-exercise {
+  min-width: 0;
+  padding: 16px 0;
+  border-top: 1px solid #e8ebe5;
+}
+
+.workout-exercise__heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workout-exercise__heading > div {
+  min-width: 0;
+}
+
+.workout-exercise h3 {
+  margin: 0;
+  font-size: 0.96rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.workout-exercise__heading .button {
+  min-height: 38px;
+  flex: 0 0 auto;
+}
+
+.workout-exercise .muted-copy {
+  margin: 5px 0 0;
+}
+
+.workout-prescriptions {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  list-style: none;
+}
+
+.muscle-pills--scroll {
+  display: flex;
+  min-width: 0;
+  gap: 7px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding: 3px 2px 8px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.muscle-pill {
+  display: inline-flex;
+  min-height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid #d9ded6;
+  border-radius: 16px;
+  color: var(--ink);
+  background: #f1f3ee;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.muscle-pill small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.muscle-pill--primary {
+  border-color: #97b19b;
+  background: var(--green-soft);
+}
+
+.muscle-pill--secondary {
+  border-color: #c3a56c;
+  background: #f7f0e2;
+}
+
+.muscle-pill--tertiary {
+  border-color: #c38b7f;
+  background: #f8e9e4;
+}
+
+.workout-detail__actions {
+  padding-top: 20px;
+}
+
+.workout-detail__actions .button {
+  width: min(100%, 320px);
+}
+
+.exercise-info__figure {
+  margin: 24px 0 0;
+}
+
+.exercise-info__figure img {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: var(--green-soft);
+}
+
+.exercise-info__figure figcaption {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.exercise-info__missing-image {
+  margin: 24px 0 0;
+}
+
+.exercise-muscle-roles {
+  display: grid;
+  gap: 0;
+  margin: 20px 0 0;
+}
+
+.exercise-muscle-roles > div {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.32fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.exercise-muscle-roles dt {
+  color: var(--green);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.exercise-muscle-roles dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
+}
+
 @keyframes arrive {
   from {
     opacity: 0;
