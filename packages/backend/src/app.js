@@ -4,6 +4,7 @@ import rateLimit from "express-rate-limit";
 import { createCatalogRouter } from "./catalog.js";
 import { createDatabasePool } from "./persistence/pool.js";
 import { createPreferencesRouter } from "./preferences.js";
+import { createProgramsRouter } from "./programs.js";
 import { createSettingsRouter } from "./settings.js";
 import {
   authenticate,
@@ -142,7 +143,7 @@ export function createApp(options = {}) {
   const app = express();
   app.set("trust proxy", trustProxyHops);
   app.use("/api", createCorsMiddleware(allowedOrigins));
-  app.use(express.json({ limit: "16kb" }));
+  app.use(express.json({ limit: "1mb" }));
   app.use("/api", createCatalogRouter({ pool }));
   app.use("/api", createPreferencesRouter({ pool }));
   app.use("/api", (_request, response, next) => {
@@ -151,6 +152,7 @@ export function createApp(options = {}) {
   });
   app.use("/api", verifyRequestOrigin(allowedOrigins));
   app.use("/api", createSettingsRouter({ pool }));
+  app.use("/api", createProgramsRouter({ pool }));
 
   const loginLimiter = rateLimit({
     windowMs: options.authRateLimit?.windowMs ?? 15 * 60 * 1000,

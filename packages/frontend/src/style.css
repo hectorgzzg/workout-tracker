@@ -638,6 +638,266 @@ h2 {
   width: min(100%, 280px);
 }
 
+.programs-layout {
+  display: grid;
+  gap: 38px;
+  padding-top: 26px;
+}
+
+.program-import,
+.saved-programs {
+  min-width: 0;
+}
+
+.programs-section-heading,
+.program-preview-heading,
+.program-week > header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.programs-section-heading {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.programs-section-heading h2,
+.program-preview-heading h3,
+.program-week h3 {
+  margin: 0;
+  font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.programs-section-heading > span,
+.program-preview-heading > span,
+.program-week > header > span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.program-field {
+  display: grid;
+  gap: 7px;
+  margin-top: 18px;
+  color: var(--ink);
+  font-size: 0.83rem;
+  font-weight: 700;
+}
+
+.program-field input,
+.program-field select,
+.program-field textarea,
+.program-mapping select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid #aab4aa;
+  border-radius: 3px;
+  color: var(--ink);
+  background: white;
+  font: inherit;
+  font-weight: 400;
+}
+
+.program-field textarea {
+  min-height: 156px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.program-preview-button,
+.program-create-button {
+  margin-top: 18px;
+}
+
+.programs-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.program-preview-heading {
+  margin-top: 34px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.program-decisions {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 20px 0 0;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.program-decisions legend {
+  padding: 0 0 8px;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.program-choice,
+.program-confirm {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.program-choice input,
+.program-confirm input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin: 1px 0 0;
+  accent-color: var(--green);
+}
+
+.program-choice > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.program-choice > span > span {
+  color: var(--muted);
+}
+
+.program-mapping {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.program-mapping > span {
+  overflow-wrap: anywhere;
+}
+
+.program-mapping small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.program-weeks {
+  margin-top: 28px;
+}
+
+.program-week {
+  padding: 16px 0 6px;
+  border-top: 1px solid var(--line);
+}
+
+.program-days,
+.program-exercises,
+.program-sets,
+.saved-program-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.program-day {
+  min-width: 0;
+  padding: 14px 0;
+  border-top: 1px solid #e8ebe5;
+}
+
+.program-day h4 {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 0.87rem;
+  overflow-wrap: anywhere;
+}
+
+.program-exercises > li {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 8px 0;
+}
+
+.program-exercises strong {
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
+.program-sets {
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.program-exercise--skipped > span,
+.program-rest {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.program-confirm {
+  margin-top: 22px;
+  font-weight: 700;
+}
+
+.program-create-button {
+  width: min(100%, 320px);
+}
+
+.program-error-list {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding-left: 20px;
+  color: #8b382b;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.saved-program-list li {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+
+.saved-program-list strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.saved-program-list span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 @keyframes arrive {
   from {
     opacity: 0;
@@ -700,6 +960,12 @@ h2 {
 
   .settings-fields--equipment {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .programs-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr);
+    align-items: start;
+    gap: 42px;
   }
 
   .settings-row {

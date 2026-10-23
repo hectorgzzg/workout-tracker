@@ -1,9 +1,11 @@
 import { createMemoryHistory } from "vue-router";
 import { authState } from "./auth.js";
 import { createAppRouter } from "./router.js";
+import programsViewModule from "./views/ProgramsView.vue";
 import settingsViewModule from "./views/SettingsView.vue";
 
 const SettingsView = settingsViewModule.default ?? settingsViewModule;
+const ProgramsView = programsViewModule.default ?? programsViewModule;
 
 test.each([
   ["member", "home"],
@@ -45,5 +47,18 @@ test("resolves Settings to the profile and gym editor", async () => {
 
   expect(router.currentRoute.value.matched[0].components.default).toBe(
     SettingsView,
+  );
+});
+
+test("resolves Programs to the CSV import view", async () => {
+  authState.status = "authenticated";
+  authState.profile = { role: "member" };
+  const router = createAppRouter(createMemoryHistory());
+
+  await router.push("/programs");
+  await router.isReady();
+
+  expect(router.currentRoute.value.matched[0].components.default).toBe(
+    ProgramsView,
   );
 });

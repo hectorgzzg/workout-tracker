@@ -62,3 +62,15 @@ const set = await setService.findById(setId); // null when the set does not exis
 **Solution:** Keep ordered SQL migrations transactional with a PostgreSQL advisory lock and applied-migration ledger. Use composite `(user_id, id)` foreign keys for owned relationships, distinct template/run identities, canonical `_kg` load columns, and separate correction rows. Restrict seed commands to explicitly named local dev/test databases.
 
 **Related files:** `packages/backend/src/persistence/`, `packages/backend/migrations/001_workout_tracker.sql`, and `packages/backend/test/persistence/schema.test.js`.
+
+---
+
+## Transactional idempotent creation
+
+**Context:** Retriable API operations that create a parent record and multiple related rows.
+
+**Problem:** A client may retry after a successful commit if the response is lost, while a partial write must never be mistaken for a completed operation.
+
+**Solution:** Hash the normalized request, scope an idempotency key to the authenticated user, and store the key/hash/result reference in the same transaction as all created rows. Same-key/same-hash retries return the original result; same-key/different-hash requests conflict. Rollback removes both the created hierarchy and its ledger entry.
+
+**Related files:** `packages/backend/src/programs.js`, `packages/backend/migrations/005_program_import_requests.sql`, and `packages/backend/test/programs.test.js`.
