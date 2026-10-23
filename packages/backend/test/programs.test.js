@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { PGlite } from "@electric-sql/pglite";
 import { fileURLToPath } from "node:url";
-import { readFile } from "node:fs/promises";
 import { createApp } from "../src/app.js";
 import { hashPassword } from "../src/auth/index.js";
 import { runMigrations } from "../src/persistence/migrate.js";
@@ -43,6 +42,48 @@ function makeCsv({
     ["Rest"],
     ["Rest"],
   ];
+  return rows.map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+function makeFiveWeekMacroFactorCsv() {
+  const rows = [
+    ["Program: Integration fixture", "Cycles: 5"],
+    [
+      "Cycle 1",
+      "Exercise",
+      "Skipped",
+      "Notes",
+      "Set 1 Type",
+      "Set 1 Rep Range",
+      "Set 1 RIR",
+      "Set 1 Rest",
+    ],
+  ];
+
+  for (let cycle = 1; cycle <= 5; cycle += 1) {
+    if (cycle > 1) {
+      rows.push([
+        `Cycle ${cycle}`,
+        "Exercise",
+        "Skipped",
+        "Notes",
+        "Set 1 Type",
+        "Set 1 Rep Range",
+        "Set 1 RIR",
+        "Set 1 Rest",
+      ]);
+    }
+    rows.push(
+      ["Workout A", "Known lift", "No", "", "Standard Set", "5-8", "2", "120"],
+      ["Rest"],
+      ["Rest"],
+      ["Rest"],
+      ["Workout B", "Known lift", "No", "", "Failure Set", "8+", "0", "90"],
+      ["Rest"],
+      ["Rest"],
+    );
+  }
+
   return rows.map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
@@ -165,19 +206,13 @@ describe("WT-012 program import", () => {
     expect(response.body.structuralErrors).toEqual([]);
   });
 
-  test("previews the supplied MacroFactor file as five complete weeks", async () => {
+  test("previews a five-week MacroFactor-format CSV as complete weeks", async () => {
     const cookie = await signIn();
-    const source = await readFile(
-      fileURLToPath(
-        new URL("../../../MacroFactor-20260927154219.csv", import.meta.url),
-      ),
-      "utf8",
-    );
     const response = await request(app)
       .post("/api/programs/import/preview")
       .set("Origin", origin)
       .set("Cookie", cookie)
-      .send({ source });
+      .send({ source: makeFiveWeekMacroFactorCsv() });
 
     expect(response.status).toBe(200);
     expect(response.body.weeks).toHaveLength(5);
