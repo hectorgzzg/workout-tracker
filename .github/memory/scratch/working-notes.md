@@ -3,18 +3,18 @@
 Use this file for the current, unfinished task. It is ignored by Git and is not committed. At the end of the session, distill durable findings into `../session-notes.md` and reusable patterns into `../patterns-discovered.md`.
 
 - WT-013: future-program editing, manual deload setup, and activation prerequisites.
+- WT-015: Home calendar/current-program ribbon, workout detail, and exercise Info.
 
 ## Current Task
 
-- Implementation and automated verification complete; browser walkthrough remains pending.
+- Implementation, automated verification, and mocked browser checks complete. Physical-device validation remains pending.
 
 ## Approach
 
-- Added authenticated API regressions first; expected route 404s confirmed the missing behavior. Used isolated PGlite for persistence and component tests for the edit/deload/activation journey.
-- Reused existing `program_runs`/`program_run_days`; no migration was required. Locked edits for resolved days and nondiscarded session-backed days.
-- Added a seven-slot manual deload builder with catalog mappings and exact type/rep/RIR prescriptions. Activation is transactional and requires an appended deload, valid weeks, mapped nonempty workouts, and explicit confirmation.
-- The builder now copies seven day slots and exercise identities/notes from the latest training week, without copying sets; users add deload-specific prescriptions before saving.
-- Verification: full Jest 20 suites / 96 tests; lint, format, CSS Prettier, build, and editor diagnostics passed. Browser walkthrough and external PostgreSQL remain unrun.
+- Reused authenticated current-run, program-detail, and catalog APIs; no backend/schema change was required.
+- Added accessible week/month calendar controls, distinct seven-slot run states, workout detail prescriptions and role-tagged muscle pills, and exercise Info metadata.
+- Vite exposed a duplicate leftover Home template after component tests passed; removed it and confirmed the browser suite/build caught the issue.
+- Verification: frontend Jest 6 suites / 26 tests, WT-015 Playwright 3 tests, lint, format check, production build, and `git diff --check` passed. Browser tests used mocked API data; physical-device checks remain pending.
 
 ## WT-012 Context
 
@@ -49,7 +49,7 @@ Use this file for the current, unfinished task. It is ignored by Git and is not 
 
 ## Next Steps
 
-- WT-013 future-program editing and manual deload setup; WT-014 later owns program activation/replacement.
+- WT-016/017 online drafts, tracking, and Start/Resume integration; WT-025 later adds actual-date history links.
 - WT-004 still awaits its first hosted CI run.
 
 ## Notes

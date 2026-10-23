@@ -2,13 +2,20 @@ import { createRouter, createWebHashHistory } from "vue-router";
 import { nextTick } from "vue";
 import { authState, loadCurrentProfile } from "./auth.js";
 import catalogViewModule from "./views/CatalogView.vue";
+import exerciseInfoViewModule from "./views/ExerciseInfoView.vue";
 import FeatureView from "./views/FeatureView.vue";
-import HomeView from "./views/HomeView.vue";
+import homeViewModule from "./views/HomeView.vue";
 import LoginView from "./views/LoginView.vue";
 import programsViewModule from "./views/ProgramsView.vue";
 import RegisterView from "./views/RegisterView.vue";
 import settingsViewModule from "./views/SettingsView.vue";
+import workoutDetailViewModule from "./views/WorkoutDetailView.vue";
 
+const ExerciseInfoView =
+  exerciseInfoViewModule.default ?? exerciseInfoViewModule;
+const HomeView = homeViewModule.default ?? homeViewModule;
+const WorkoutDetailView =
+  workoutDetailViewModule.default ?? workoutDetailViewModule;
 const CatalogView = catalogViewModule.default ?? catalogViewModule;
 const SettingsView = settingsViewModule.default ?? settingsViewModule;
 const ProgramsView = programsViewModule.default ?? programsViewModule;
@@ -46,14 +53,14 @@ export function createAppRouter(
       {
         path: "/workouts/:workoutId",
         name: "workout-detail",
-        component: FeatureView,
-        meta: {
-          requiresAuth: true,
-          pageTitle: "Workout details",
-          emptyTitle: "Workout details are not available",
-          pageMessage:
-            "Workout prescriptions will appear here when program setup is available.",
-        },
+        component: WorkoutDetailView,
+        meta: { requiresAuth: true },
+      },
+      {
+        path: "/exercises/:exerciseId/info",
+        name: "exercise-info",
+        component: ExerciseInfoView,
+        meta: { requiresAuth: true },
       },
       {
         path: "/tracker/:sessionId?",

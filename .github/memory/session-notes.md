@@ -400,3 +400,25 @@ Document completed development sessions here so future work can benefit from the
 - The first current-run API regression returned 404 as expected; later tests reproduced stale active-run slot types after template edits and a restart edit lock that blocked future program changes. Both edge cases were corrected and covered.
 - `packages/backend/test/programs.test.js` passed 23 tests, including each of the seven possible final slots. Full backend passed 14 suites / 91 tests; lint, format check, and `git diff --check` passed.
 - Tests used isolated PGlite. External PostgreSQL and browser/UI verification were not run; those remain outside the WT-014 backend acceptance completed here.
+
+### Session: WT-015 Home, workout detail, and exercise Info
+
+**Date:** 2026-10-23
+
+#### What was accomplished
+
+- Replaced the Home placeholder with week/month calendar controls, retryable current-program loading, and a collapsible seven-slot ribbon with distinct run/rest states and workout-slot navigation.
+- Added workout detail showing aggregate target muscles, catalog-linked role pills, all prescribed set types/ranges/RIR, and Start/Resume navigation; added exercise Info with its image and Primary/Secondary/Tertiary muscle roles.
+- Added focused component/router coverage and mocked-API Playwright tests for Home, workout detail, exercise Info, long labels, error/empty states, and mobile/desktop overflow.
+- Updated WT-015 implementation and verification evidence in the backlog.
+
+#### Key findings and decisions
+
+- Existing user-scoped current-run, program-detail, and catalog endpoints provided the required data; no backend or schema change was needed.
+- Start/Resume routes to the tracker but does not create or resume a session draft; that integration belongs to WT-016/017. Actual-date calendar history links remain WT-025.
+- Vite exposed a duplicate stale `<template>` in Home that Jest did not catch. Removing it unblocked the browser build; Vue template markup was then shaped to satisfy both Prettier and the configured ESLint rules without suppressions.
+
+#### Outcomes
+
+- Frontend Jest passed 6 suites / 26 tests; WT-015 Playwright passed 3 mocked-API tests, including 390px and 1440px viewport overflow checks.
+- `npm run lint`, `npm run format:check`, `npm run build`, and `git diff --check` passed. Physical-device checks and history/draft integration remain pending their later tasks.
