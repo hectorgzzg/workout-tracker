@@ -3,6 +3,7 @@ import express from "express";
 import rateLimit from "express-rate-limit";
 import { createCatalogRouter } from "./catalog.js";
 import { createDatabasePool } from "./persistence/pool.js";
+import { createPreferencesRouter } from "./preferences.js";
 import { createSettingsRouter } from "./settings.js";
 import {
   authenticate,
@@ -143,6 +144,7 @@ export function createApp(options = {}) {
   app.use("/api", createCorsMiddleware(allowedOrigins));
   app.use(express.json({ limit: "16kb" }));
   app.use("/api", createCatalogRouter({ pool }));
+  app.use("/api", createPreferencesRouter({ pool }));
   app.use("/api", (_request, response, next) => {
     response.set("Cache-Control", "no-store");
     next();

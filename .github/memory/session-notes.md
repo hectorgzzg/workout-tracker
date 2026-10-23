@@ -288,3 +288,44 @@ Document completed development sessions here so future work can benefit from the
 - API tests first observed `/api/settings` returning 404; implementation made all three API scenarios pass. Component and route tests also passed after their expected missing-view/placeholder RED.
 - `npm test -- --runInBand` passed 16 suites / 69 tests. Lint, formatting, frontend production build, editor diagnostics, and `git diff --check` passed.
 - Tests used isolated PGlite. A separate PostgreSQL service and Playwright/mobile/desktop browser checks were not run; the local app servers were already running and left untouched.
+
+### Session: WT-008 catalog snapshot persistence regression
+
+**Date:** 2026-10-22
+
+#### What was accomplished
+
+- Extended the catalog API integration test with linked program-day and session exercise snapshots.
+- Verified that editing catalog metadata changes the shared catalog record without changing existing program prescription, session exercise, session name, or session prescription snapshots.
+- Updated WT-008 backlog evidence; user-reported browser checks remain recorded separately, and coefficients/assets remain later content inputs.
+
+#### Key findings and decisions
+
+- The current catalog update path already changes the shared exercise row and muscle associations without writing to program/session snapshot rows. No implementation change was required; the test guards this behavior against regressions.
+- JSONB snapshots are compared as parsed values in the isolated PGlite integration test.
+
+#### Outcomes
+
+- `npm run test:backend -- --runInBand packages/backend/test/catalog.test.js` passed 4 tests.
+- `npm run test:backend -- --runInBand` passed 11 suites / 56 tests. Editor diagnostics were clean; external PostgreSQL was not used.
+
+### Session: WT-010 canonical loads and snapshots
+
+**Date:** 2026-10-22
+
+#### What was accomplished
+
+- Added kg/lb conversion and display rounding, validated load-interpretation and immutable exercise-snapshot helpers, and authenticated per-exercise unit preference endpoints.
+- Recorded WT-010 implementation and automated verification in the backlog.
+
+#### Key findings and decisions
+
+- Existing database columns already use canonical kg and `exercise_preferences` already supports per-user unit overrides, so this task required no schema migration.
+- Overrides are stored separately from profile defaults; clearing an override returns the current default. Snapshot helpers copy and deeply freeze inputs while preserving missing factors/ratios as `null`.
+- Canonical three-decimal checks need a scale-aware floating-point tolerance: valid `1.005 kg` otherwise fails due to binary representation.
+
+#### Outcomes
+
+- The initial missing-module RED and the later `1.005 kg` boundary RED both reproduced the missing behavior; focused WT-010 tests passed 4 tests after implementation.
+- Full Jest passed 17 suites / 74 tests. Lint, format check, frontend build, editor diagnostics, and `git diff --check` passed.
+- Persistence tests used isolated PGlite. External PostgreSQL and browser validation were not run; tracker UI integration remains WT-017.
