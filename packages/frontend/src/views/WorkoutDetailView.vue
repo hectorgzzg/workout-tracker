@@ -5,9 +5,13 @@ export default {
       state: {
         loading: true,
         error: "",
+        startError: "",
+        starting: false,
         run: null,
         day: null,
         catalog: [],
+        activeSession: null,
+        pendingStart: null,
       },
     };
   },
@@ -26,24 +30,28 @@ export default {
       ];
     },
     startLabel() {
-      const currentDay = this.state.run?.week?.days?.find(
-        (day) => day.templateDayId === this.state.day?.id,
-      );
-      return currentDay?.status === "in_progress"
-        ? "Resume Workout"
-        : "Start Workout";
+      if (this.state.activeSession) {
+        const runDay = this.state.run?.week?.days?.find(
+          (day) => day.templateDayId === this.state.day?.id,
+        );
+        return runDay?.id === this.state.activeSession.runDayId
+          ? "Resume Workout"
+          : "Resume Active Workout";
+      }
+      return "Start Workout";
     },
   },
   mounted() {
     this.loadWorkout();
   },
   methods: {
-    async request(path) {
+    async request(path, options = {}) {
       let response;
       const apiOrigin = globalThis.__WORKOUT_TRACKER_API_ORIGIN__ ?? "";
       try {
         response = await fetch(`${apiOrigin}${path}`, {
           credentials: "include",
+          ...options,
         });
       } catch {
         throw new Error("The workout service could not be reached. Try again.");
@@ -60,7 +68,11 @@ export default {
       this.state.loading = true;
       this.state.error = "";
       try {
-        const run = await this.request("/api/program-runs/current");
+        const [run, activeSession] = await Promise.all([
+          this.request("/api/program-runs/current"),
+          this.request("/api/workout-sessions/active"),
+        ]);
+        this.state.activeSession = activeSession;
         if (!run) {
           this.state.day = null;
           return;
@@ -80,6 +92,50 @@ export default {
         this.state.error = error.message;
       } finally {
         this.state.loading = false;
+      }
+    },
+    async startWorkout() {
+      const activeSession = this.state.activeSession;
+      if (activeSession) {
+        await this.$router.push(`/tracker/${activeSession.id}`);
+        return;
+      }
+      const runDay = this.state.run?.week?.days?.find(
+        (day) => day.templateDayId === this.state.day?.id,
+      );
+      if (!runDay || !this.state.run?.id) {
+        this.state.startError = "This workout is no longer available to start.";
+        return;
+      }
+      const payload = { runId: this.state.run.id, runDayId: runDay.id };
+      if (
+        !this.state.pendingStart ||
+        this.state.pendingStart.payload.runId !== payload.runId ||
+        this.state.pendingStart.payload.runDayId !== payload.runDayId
+      ) {
+        this.state.pendingStart = {
+          payload,
+          key:
+            globalThis.crypto?.randomUUID?.() ??
+            `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        };
+      }
+      this.state.starting = true;
+      this.state.startError = "";
+      try {
+        const session = await this.request("/api/workout-sessions/start", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": this.state.pendingStart.key,
+          },
+          body: JSON.stringify(this.state.pendingStart.payload),
+        });
+        await this.$router.push(`/tracker/${session.id}`);
+      } catch (error) {
+        this.state.startError = error.message;
+      } finally {
+        this.state.starting = false;
       }
     },
     muscleRoles(exerciseId) {
@@ -197,7 +253,36 @@ export default {
       </section>
 
       <footer class="workout-detail__actions">
-        <RouterLink to="/tracker" class="button">{{ startLabel }}</RouterLink>
+        <p
+          v-if="state.activeSession && startLabel === 'Resume Active Workout'"
+          class="form-message"
+        >
+          Another workout draft is active. Resume it before starting this slot.
+        </p>
+        <p
+          v-if="state.startError"
+          class="form-message form-message--error"
+          role="alert"
+        >
+          {{ state.startError }}
+        </p>
+        <button
+          class="button button--primary"
+          type="button"
+          :disabled="state.starting"
+          @click="startWorkout"
+        >
+          {{ state.starting ? "Starting…" : startLabel }}
+        </button>
+        <button
+          v-if="state.startError"
+          class="text-button"
+          type="button"
+          :disabled="state.starting"
+          @click="startWorkout"
+        >
+          Retry Start
+        </button>
       </footer>
     </template>
   </section>

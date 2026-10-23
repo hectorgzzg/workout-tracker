@@ -524,6 +524,339 @@ export async function resolveProgramRunWorkout(
   return resolveRunDay(client, userId, runId, runDayId, "workout", outcome);
 }
 
+async function checkRunDayEligibility(client, userId, runId, runDayId) {
+  const run = await client.query(
+    `SELECT status FROM program_runs
+     WHERE user_id = $1 AND id = $2 FOR UPDATE`,
+    [userId, runId],
+  );
+  if (run.rows.length === 0) {
+    return { statusCode: 404, error: "Program run not found." };
+  }
+  if (run.rows[0].status !== "active") {
+    return {
+      statusCode: 409,
+      error: "Only the active program run is eligible.",
+    };
+  }
+  const currentWeekNumber = await getCurrentWeekNumber(client, userId, runId);
+  const day = await client.query(
+    `SELECT week_number, day_type, status FROM program_run_days
+     WHERE user_id = $1 AND run_id = $2 AND id = $3 FOR UPDATE`,
+    [userId, runId, runDayId],
+  );
+  if (day.rows.length === 0) {
+    return { statusCode: 404, error: "Program run day not found." };
+  }
+  if (
+    day.rows[0].day_type !== "workout" ||
+    day.rows[0].status !== "pending" ||
+    day.rows[0].week_number !== currentWeekNumber
+  ) {
+    return {
+      statusCode: 409,
+      error: "Only pending workout slots in the current week are eligible.",
+    };
+  }
+  return { statusCode: 200 };
+}
+
+async function checkWorkoutDateEligibility(
+  client,
+  userId,
+  localDate,
+  sessionId = null,
+) {
+  const parameters = [userId, localDate];
+  const sessionFilter = sessionId ? "AND id <> $3" : "";
+  if (sessionId) parameters.push(sessionId);
+  const performance = await client.query(
+    `SELECT id FROM workout_sessions
+     WHERE user_id = $1 AND started_local_date = $2
+       AND status IN ('completed', 'partial') AND has_performance
+       ${sessionFilter}
+     LIMIT 1`,
+    parameters,
+  );
+  if (performance.rows.length > 0) {
+    return {
+      statusCode: 409,
+      error:
+        "A workout with retained performance already exists for this local start date.",
+    };
+  }
+  return { statusCode: 200 };
+}
+
+export async function recheckWorkoutSessionEligibility(
+  client,
+  { userId, sessionId },
+) {
+  const session = await client.query(
+    `SELECT status, program_run_id, program_run_day_id, started_local_date
+     FROM workout_sessions WHERE user_id = $1 AND id = $2 FOR UPDATE`,
+    [userId, sessionId],
+  );
+  if (session.rows.length === 0) {
+    return { statusCode: 404, error: "Workout session not found." };
+  }
+  const current = session.rows[0];
+  if (current.status !== "draft") {
+    return { statusCode: 409, error: "Only an active draft can be finalized." };
+  }
+  if (!current.program_run_id || !current.program_run_day_id) {
+    return {
+      statusCode: 409,
+      error: "The workout no longer has an eligible program slot.",
+    };
+  }
+  const dayEligibility = await checkRunDayEligibility(
+    client,
+    userId,
+    current.program_run_id,
+    current.program_run_day_id,
+  );
+  if (dayEligibility.statusCode !== 200) return dayEligibility;
+  return checkWorkoutDateEligibility(
+    client,
+    userId,
+    current.started_local_date,
+    sessionId,
+  );
+}
+
+function sessionResponse(row, exercises, replayed = false) {
+  return {
+    id: row.id,
+    runId: row.program_run_id,
+    runDayId: row.program_run_day_id,
+    status: row.status,
+    hasPerformance: row.has_performance,
+    startedAt: row.started_at,
+    startedTimezone: row.started_timezone,
+    startedLocalDate: row.started_local_date,
+    version: row.version,
+    exercises,
+    ...(replayed ? { replayed: true } : {}),
+  };
+}
+
+async function getWorkoutSession(pool, userId, sessionId) {
+  const sessionResult = await pool.query(
+    `SELECT id, program_run_id, program_run_day_id, status, has_performance,
+            started_at, started_timezone,
+            to_char(started_local_date, 'YYYY-MM-DD') AS started_local_date,
+            version
+     FROM workout_sessions WHERE user_id = $1 AND id = $2`,
+    [userId, sessionId],
+  );
+  if (sessionResult.rows.length === 0) return null;
+  const exerciseResult = await pool.query(
+    `SELECT id, exercise_id, name_snapshot, exercise_snapshot,
+            prescription_snapshot, bodyweight_kg, bodyweight_factor,
+            assistance_ratio
+     FROM session_exercises
+    WHERE user_id = $1 AND session_id = $2
+    ORDER BY (exercise_snapshot->>'sortOrder')::int`,
+    [userId, sessionId],
+  );
+  const exercises = exerciseResult.rows.map((exercise) => ({
+    id: exercise.id,
+    exerciseId: exercise.exercise_id,
+    name: exercise.name_snapshot,
+    snapshot: exercise.exercise_snapshot,
+    prescription: exercise.prescription_snapshot,
+    bodyweightKg: exercise.bodyweight_kg,
+    bodyweightFactor: exercise.bodyweight_factor,
+    assistanceRatio: exercise.assistance_ratio,
+    sets: [],
+  }));
+  const exerciseById = new Map(
+    exercises.map((exercise) => [exercise.id, exercise]),
+  );
+  if (exerciseById.size > 0) {
+    const setResult = await pool.query(
+      `SELECT id, session_exercise_id, set_number, set_type,
+              prescription_snapshot, actual_load_kg, actual_reps, actual_rir,
+              checked_at
+       FROM session_sets WHERE user_id = $1
+         AND session_exercise_id = ANY($2::uuid[]) ORDER BY set_number`,
+      [userId, [...exerciseById.keys()]],
+    );
+    for (const set of setResult.rows) {
+      exerciseById.get(set.session_exercise_id).sets.push({
+        id: set.id,
+        setNumber: set.set_number,
+        type: set.set_type,
+        prescription: set.prescription_snapshot,
+        actualLoadKg: set.actual_load_kg,
+        actualReps: set.actual_reps,
+        actualRir: set.actual_rir,
+        checked: set.checked_at !== null,
+      });
+    }
+  }
+  const row = sessionResult.rows[0];
+  return sessionResponse(row, exercises);
+}
+
+async function insertSessionSnapshots(client, userId, sessionId, runDayId) {
+  const source = await client.query(
+    `SELECT day_exercises.id AS day_exercise_id, day_exercises.exercise_id,
+            day_exercises.sort_order, day_exercises.prescription_snapshot AS notes_snapshot,
+            exercises.name, exercises.image_url, exercises.load_type,
+            exercises.rest_category, exercises.bodyweight_factor,
+            exercises.assistance_ratio, exercises.dumbbell_count,
+            profiles.bodyweight_kg, profiles.default_unit,
+            preferences.unit_override, sets.set_number, sets.set_type,
+            sets.rep_min, sets.rep_max, sets.target_rir
+     FROM program_run_days AS run_days
+     JOIN program_days AS days
+       ON days.user_id = run_days.user_id AND days.id = run_days.template_day_id
+     JOIN program_day_exercises AS day_exercises
+       ON day_exercises.user_id = days.user_id AND day_exercises.day_id = days.id
+     JOIN exercises ON exercises.id = day_exercises.exercise_id
+     JOIN program_sets AS sets
+       ON sets.user_id = day_exercises.user_id
+      AND sets.day_exercise_id = day_exercises.id
+     JOIN profiles ON profiles.user_id = run_days.user_id
+     LEFT JOIN exercise_preferences AS preferences
+       ON preferences.user_id = run_days.user_id
+      AND preferences.exercise_id = exercises.id
+     WHERE run_days.user_id = $1 AND run_days.id = $2
+     ORDER BY day_exercises.sort_order, sets.set_number`,
+    [userId, runDayId],
+  );
+  const {
+    rows: [profile],
+  } = await client.query(
+    `SELECT timezone, default_unit FROM profiles WHERE user_id = $1 FOR SHARE`,
+    [userId],
+  );
+  const gym = await client.query("SELECT id FROM gyms WHERE user_id = $1", [
+    userId,
+  ]);
+  const gymId = gym.rows[0]?.id;
+  const equipment = gymId
+    ? await client.query(
+        `SELECT name, load_type, min_load_kg, max_load_kg, increment_kg,
+                available_loads_kg
+         FROM gym_equipment WHERE user_id = $1 AND gym_id = $2 ORDER BY name`,
+        [userId, gymId],
+      )
+    : { rows: [] };
+  const bars = gymId
+    ? await client.query(
+        "SELECT name, weight_kg FROM gym_bars WHERE user_id = $1 AND gym_id = $2 ORDER BY name",
+        [userId, gymId],
+      )
+    : { rows: [] };
+  const plates = gymId
+    ? await client.query(
+        "SELECT weight_kg, quantity FROM gym_plates WHERE user_id = $1 AND gym_id = $2 ORDER BY weight_kg",
+        [userId, gymId],
+      )
+    : { rows: [] };
+  const gymSnapshot = {
+    equipment: equipment.rows,
+    bars: bars.rows,
+    plates: plates.rows,
+  };
+  let currentDayExerciseId = null;
+  let currentExercise = null;
+  for (const row of source.rows) {
+    if (row.day_exercise_id !== currentDayExerciseId) {
+      if (currentExercise) {
+        await client.query(
+          `UPDATE session_exercises SET prescription_snapshot = $1::jsonb
+           WHERE user_id = $2 AND id = $3`,
+          [
+            JSON.stringify(currentExercise.prescription),
+            userId,
+            currentExercise.sessionExerciseId,
+          ],
+        );
+      }
+      currentDayExerciseId = row.day_exercise_id;
+      const preferenceUnit = row.unit_override ?? row.default_unit;
+      const exerciseSnapshot = {
+        sortOrder: row.sort_order,
+        imageUrl: row.image_url,
+        loadType: row.load_type,
+        restCategory: row.rest_category,
+        dumbbellCount: row.dumbbell_count,
+        unit: preferenceUnit,
+        defaultUnit: profile.default_unit,
+        timezone: profile.timezone,
+        gym: gymSnapshot,
+      };
+      currentExercise = {
+        source: row,
+        snapshot: exerciseSnapshot,
+        prescription: {
+          notes: row.notes_snapshot?.notes ?? "",
+          sets: [],
+        },
+      };
+      const inserted = await client.query(
+        `INSERT INTO session_exercises
+           (user_id, session_id, exercise_id, name_snapshot, exercise_snapshot,
+            prescription_snapshot, bodyweight_kg, bodyweight_factor, assistance_ratio)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9)
+         RETURNING id`,
+        [
+          userId,
+          sessionId,
+          row.exercise_id,
+          row.name,
+          JSON.stringify(exerciseSnapshot),
+          JSON.stringify(currentExercise.prescription),
+          row.bodyweight_kg,
+          row.bodyweight_factor,
+          row.assistance_ratio,
+        ],
+      );
+      currentExercise.sessionExerciseId = inserted.rows[0].id;
+      currentExercise.sets = [];
+    }
+    const prescription = {
+      repMin: row.rep_min,
+      repMax: row.rep_max,
+      targetRir: row.target_rir,
+      unit: row.unit_override ?? row.default_unit,
+      loadType: row.load_type,
+    };
+    currentExercise.prescription.sets.push({
+      type: row.set_type,
+      ...prescription,
+    });
+    const insertedSet = await client.query(
+      `INSERT INTO session_sets
+         (user_id, session_exercise_id, set_number, set_type, prescription_snapshot)
+       VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
+      [
+        userId,
+        currentExercise.sessionExerciseId,
+        row.set_number,
+        row.set_type,
+        JSON.stringify(prescription),
+      ],
+    );
+    currentExercise.sets.push(insertedSet.rows[0].id);
+  }
+  if (currentExercise) {
+    await client.query(
+      `UPDATE session_exercises SET prescription_snapshot = $1::jsonb
+       WHERE user_id = $2 AND id = $3`,
+      [
+        JSON.stringify(currentExercise.prescription),
+        userId,
+        currentExercise.sessionExerciseId,
+      ],
+    );
+  }
+}
+
 async function getCurrentProgramRun(pool, userId) {
   const run = await pool.query(
     `SELECT runs.id, runs.template_id, runs.status, runs.started_at,
@@ -580,6 +913,408 @@ async function getCurrentProgramRun(pool, userId) {
 export function createProgramsRouter({ pool }) {
   const router = express.Router();
   const requireSignIn = authenticate({ pool });
+
+  router.get(
+    "/workout-sessions/active",
+    requireSignIn,
+    async (request, response) => {
+      const { rows } = await pool.query(
+        `SELECT id FROM workout_sessions
+         WHERE user_id = $1 AND status = 'draft'`,
+        [request.auth.userId],
+      );
+      if (rows.length === 0) {
+        response.json(null);
+        return;
+      }
+      response.json(
+        await getWorkoutSession(pool, request.auth.userId, rows[0].id),
+      );
+    },
+  );
+
+  router.post(
+    "/workout-sessions/start",
+    requireSignIn,
+    async (request, response) => {
+      const { runId, runDayId } = request.body ?? {};
+      const idempotencyKey = request.get("Idempotency-Key");
+      if (
+        !uuidPattern.test(runId ?? "") ||
+        !uuidPattern.test(runDayId ?? "") ||
+        !idempotencyKeyPattern.test(idempotencyKey ?? "") ||
+        Object.keys(request.body ?? {}).some(
+          (key) => !["runId", "runDayId"].includes(key),
+        )
+      ) {
+        validationError(
+          response,
+          "A valid run, workout slot, and idempotency key are required.",
+        );
+        return;
+      }
+      const userId = request.auth.userId;
+      const requestHash = createHash("sha256")
+        .update(JSON.stringify({ runId, runDayId }))
+        .digest("hex");
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT id FROM users WHERE id = $1 FOR UPDATE", [
+          userId,
+        ]);
+        const previousRequest = await client.query(
+          `SELECT operation, request_hash, session_id
+           FROM workout_session_requests
+           WHERE user_id = $1 AND idempotency_key = $2`,
+          [userId, idempotencyKey],
+        );
+        if (previousRequest.rows.length > 0) {
+          const previous = previousRequest.rows[0];
+          if (
+            previous.operation !== "start" ||
+            previous.request_hash !== requestHash
+          ) {
+            await client.query("ROLLBACK");
+            response.status(409).json({
+              error:
+                "Idempotency key was already used with a different request.",
+            });
+            return;
+          }
+          const session = await getWorkoutSession(
+            client,
+            userId,
+            previous.session_id,
+          );
+          await client.query("COMMIT");
+          response.status(200).json({ ...session, replayed: true });
+          return;
+        }
+
+        const activeDraft = await client.query(
+          `SELECT id, program_run_id, program_run_day_id
+           FROM workout_sessions WHERE user_id = $1 AND status = 'draft'
+           FOR UPDATE`,
+          [userId],
+        );
+        if (activeDraft.rows.length > 0) {
+          const existing = activeDraft.rows[0];
+          if (
+            existing.program_run_id !== runId ||
+            existing.program_run_day_id !== runDayId
+          ) {
+            await client.query("ROLLBACK");
+            response.status(409).json({
+              error: "Resolve the active workout before starting another slot.",
+            });
+            return;
+          }
+          const session = await getWorkoutSession(client, userId, existing.id);
+          await client.query(
+            `INSERT INTO workout_session_requests
+               (user_id, idempotency_key, operation, request_hash, session_id, resulting_version)
+             VALUES ($1, $2, 'start', $3, $4, $5)`,
+            [userId, idempotencyKey, requestHash, existing.id, session.version],
+          );
+          await client.query("COMMIT");
+          response.status(200).json(session);
+          return;
+        }
+
+        const eligibility = await checkRunDayEligibility(
+          client,
+          userId,
+          runId,
+          runDayId,
+        );
+        if (eligibility.statusCode !== 200) {
+          await client.query("ROLLBACK");
+          response
+            .status(eligibility.statusCode)
+            .json({ error: eligibility.error });
+          return;
+        }
+        const profile = await client.query(
+          `SELECT timezone, (now() AT TIME ZONE timezone)::date AS local_date
+           FROM profiles WHERE user_id = $1 FOR SHARE`,
+          [userId],
+        );
+        if (profile.rows.length === 0) {
+          await client.query("ROLLBACK");
+          response
+            .status(409)
+            .json({ error: "A profile is required to start a workout." });
+          return;
+        }
+        const dateEligibility = await checkWorkoutDateEligibility(
+          client,
+          userId,
+          profile.rows[0].local_date,
+        );
+        if (dateEligibility.statusCode !== 200) {
+          await client.query("ROLLBACK");
+          response
+            .status(dateEligibility.statusCode)
+            .json({ error: dateEligibility.error });
+          return;
+        }
+        const sessionResult = await client.query(
+          `INSERT INTO workout_sessions
+             (user_id, program_run_id, program_run_day_id, started_at,
+              started_timezone, started_local_date)
+           VALUES ($1, $2, $3, now(), $4, $5)
+           RETURNING id`,
+          [
+            userId,
+            runId,
+            runDayId,
+            profile.rows[0].timezone,
+            profile.rows[0].local_date,
+          ],
+        );
+        const sessionId = sessionResult.rows[0].id;
+        await insertSessionSnapshots(client, userId, sessionId, runDayId);
+        const session = await getWorkoutSession(client, userId, sessionId);
+        await client.query(
+          `INSERT INTO workout_session_requests
+             (user_id, idempotency_key, operation, request_hash, session_id, resulting_version)
+           VALUES ($1, $2, 'start', $3, $4, $5)`,
+          [userId, idempotencyKey, requestHash, sessionId, session.version],
+        );
+        await client.query("COMMIT");
+        response.status(201).json(session);
+      } catch (error) {
+        await client.query("ROLLBACK");
+        if (error.code === "23505") {
+          response
+            .status(409)
+            .json({ error: "A workout session already exists." });
+          return;
+        }
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  );
+
+  router.get(
+    "/workout-sessions/:sessionId",
+    requireSignIn,
+    async (request, response) => {
+      if (!uuidPattern.test(request.params.sessionId)) {
+        response.status(404).json({ error: "Workout session not found." });
+        return;
+      }
+      const session = await getWorkoutSession(
+        pool,
+        request.auth.userId,
+        request.params.sessionId,
+      );
+      if (!session || session.status !== "draft") {
+        response.status(404).json({ error: "Workout session not found." });
+        return;
+      }
+      response.json(session);
+    },
+  );
+
+  router.put(
+    "/workout-sessions/:sessionId",
+    requireSignIn,
+    async (request, response) => {
+      const { sessionId } = request.params;
+      const { version, sets } = request.body ?? {};
+      const idempotencyKey = request.get("Idempotency-Key");
+      if (
+        !uuidPattern.test(sessionId) ||
+        !Number.isInteger(version) ||
+        version < 1 ||
+        !Array.isArray(sets) ||
+        sets.length < 1 ||
+        sets.length > 500 ||
+        !idempotencyKeyPattern.test(idempotencyKey ?? "") ||
+        Object.keys(request.body ?? {}).some(
+          (key) => !["version", "sets"].includes(key),
+        )
+      ) {
+        validationError(
+          response,
+          "A session version, set changes, and idempotency key are required.",
+        );
+        return;
+      }
+      const normalizedSets = [...sets].sort((left, right) =>
+        String(left?.id).localeCompare(String(right?.id)),
+      );
+      if (
+        normalizedSets.some(
+          (set) =>
+            !isRecord(set) ||
+            !uuidPattern.test(set.id ?? "") ||
+            Object.keys(set).some(
+              (key) =>
+                !["id", "actualLoadKg", "actualReps", "actualRir"].includes(
+                  key,
+                ),
+            ) ||
+            !Object.hasOwn(set, "actualLoadKg") ||
+            !Object.hasOwn(set, "actualReps") ||
+            !Object.hasOwn(set, "actualRir") ||
+            (set.actualLoadKg !== null &&
+              (typeof set.actualLoadKg !== "number" ||
+                !Number.isFinite(set.actualLoadKg) ||
+                set.actualLoadKg < 0)) ||
+            (set.actualReps !== null &&
+              (!Number.isInteger(set.actualReps) || set.actualReps < 1)) ||
+            (set.actualRir !== null &&
+              (!Number.isInteger(set.actualRir) ||
+                set.actualRir < 0 ||
+                set.actualRir > 10)),
+        ) ||
+        new Set(normalizedSets.map((set) => set.id)).size !==
+          normalizedSets.length
+      ) {
+        validationError(response, "Set values are invalid.");
+        return;
+      }
+
+      const userId = request.auth.userId;
+      const requestHash = createHash("sha256")
+        .update(JSON.stringify({ version, sets: normalizedSets }))
+        .digest("hex");
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT id FROM users WHERE id = $1 FOR UPDATE", [
+          userId,
+        ]);
+        const previousRequest = await client.query(
+          `SELECT operation, request_hash, session_id
+           FROM workout_session_requests
+           WHERE user_id = $1 AND idempotency_key = $2`,
+          [userId, idempotencyKey],
+        );
+        if (previousRequest.rows.length > 0) {
+          const previous = previousRequest.rows[0];
+          if (
+            previous.operation !== "save" ||
+            previous.request_hash !== requestHash ||
+            previous.session_id !== sessionId
+          ) {
+            await client.query("ROLLBACK");
+            response.status(409).json({
+              error:
+                "Idempotency key was already used with a different request.",
+            });
+            return;
+          }
+          const session = await getWorkoutSession(client, userId, sessionId);
+          await client.query("COMMIT");
+          response.status(200).json({ ...session, replayed: true });
+          return;
+        }
+
+        const current = await client.query(
+          `SELECT version FROM workout_sessions
+           WHERE user_id = $1 AND id = $2 AND status = 'draft' FOR UPDATE`,
+          [userId, sessionId],
+        );
+        if (current.rows.length === 0) {
+          await client.query("ROLLBACK");
+          response.status(404).json({ error: "Workout session not found." });
+          return;
+        }
+        if (current.rows[0].version !== version) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "This workout changed in another tab or device.",
+            currentVersion: current.rows[0].version,
+          });
+          return;
+        }
+        const setIds = normalizedSets.map(({ id }) => id);
+        const ownedSets = await client.query(
+          `SELECT sets.id, sets.set_type
+           FROM session_sets AS sets
+           JOIN session_exercises AS exercises
+             ON exercises.user_id = sets.user_id
+            AND exercises.id = sets.session_exercise_id
+           WHERE sets.user_id = $1 AND exercises.session_id = $2
+             AND sets.id = ANY($3::uuid[])`,
+          [userId, sessionId, setIds],
+        );
+        if (ownedSets.rows.length !== normalizedSets.length) {
+          await client.query("ROLLBACK");
+          validationError(response, "A set does not belong to this workout.");
+          return;
+        }
+        const setTypeById = new Map(
+          ownedSets.rows.map(({ id, set_type: type }) => [id, type]),
+        );
+        if (
+          normalizedSets.some(
+            (set) =>
+              setTypeById.get(set.id) === "failure" &&
+              set.actualLoadKg !== null &&
+              set.actualReps !== null &&
+              set.actualRir !== null &&
+              set.actualRir !== 0,
+          )
+        ) {
+          await client.query("ROLLBACK");
+          validationError(response, "Failure sets require actual RIR 0.");
+          return;
+        }
+        for (const set of normalizedSets) {
+          await client.query(
+            `UPDATE session_sets
+             SET actual_load_kg = $1::numeric, actual_reps = $2::integer,
+                 actual_rir = $3::smallint,
+                 checked_at = CASE
+                   WHEN $1::numeric IS NOT NULL AND $2::integer IS NOT NULL
+                     AND $3::smallint IS NOT NULL
+                   THEN now() ELSE NULL END
+             WHERE user_id = $4 AND id = $5`,
+            [set.actualLoadKg, set.actualReps, set.actualRir, userId, set.id],
+          );
+        }
+        const updated = await client.query(
+          `UPDATE workout_sessions SET version = version + 1
+           WHERE user_id = $1 AND id = $2 AND status = 'draft'
+           RETURNING version`,
+          [userId, sessionId],
+        );
+        await client.query(
+          `INSERT INTO workout_session_requests
+             (user_id, idempotency_key, operation, request_hash, session_id, resulting_version)
+           VALUES ($1, $2, 'save', $3, $4, $5)`,
+          [
+            userId,
+            idempotencyKey,
+            requestHash,
+            sessionId,
+            updated.rows[0].version,
+          ],
+        );
+        const session = await getWorkoutSession(client, userId, sessionId);
+        await client.query("COMMIT");
+        response.json(session);
+      } catch (error) {
+        await client.query("ROLLBACK");
+        if (error.code === "23505") {
+          response
+            .status(409)
+            .json({ error: "The request conflicts with an existing update." });
+          return;
+        }
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  );
 
   router.get(
     "/program-runs/current",

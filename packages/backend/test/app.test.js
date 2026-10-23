@@ -15,4 +15,17 @@ describe("backend health endpoint", () => {
     expect(response.status).toBe(401);
     expect(response.body).toEqual({ error: "Authentication required" });
   });
+
+  test("allows idempotent session requests through cross-origin preflight", async () => {
+    const response = await request(app)
+      .options("/api/workout-sessions/start")
+      .set("Origin", "http://localhost:5173")
+      .set("Access-Control-Request-Method", "POST")
+      .set("Access-Control-Request-Headers", "content-type,idempotency-key");
+
+    expect(response.status).toBe(204);
+    expect(response.headers["access-control-allow-headers"]).toContain(
+      "Idempotency-Key",
+    );
+  });
 });

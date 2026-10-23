@@ -10,12 +10,15 @@ import programsViewModule from "./views/ProgramsView.vue";
 import RegisterView from "./views/RegisterView.vue";
 import settingsViewModule from "./views/SettingsView.vue";
 import workoutDetailViewModule from "./views/WorkoutDetailView.vue";
+import workoutTrackerViewModule from "./views/WorkoutTrackerView.vue";
 
 const ExerciseInfoView =
   exerciseInfoViewModule.default ?? exerciseInfoViewModule;
 const HomeView = homeViewModule.default ?? homeViewModule;
 const WorkoutDetailView =
   workoutDetailViewModule.default ?? workoutDetailViewModule;
+const WorkoutTrackerView =
+  workoutTrackerViewModule.default ?? workoutTrackerViewModule;
 const CatalogView = catalogViewModule.default ?? catalogViewModule;
 const SettingsView = settingsViewModule.default ?? settingsViewModule;
 const ProgramsView = programsViewModule.default ?? programsViewModule;
@@ -65,7 +68,7 @@ export function createAppRouter(
       {
         path: "/tracker/:sessionId?",
         name: "tracker",
-        component: FeatureView,
+        component: WorkoutTrackerView,
         meta: {
           requiresAuth: true,
           pageTitle: "Workout tracker",

@@ -89,7 +89,7 @@ function createCorsMiddleware(allowedOrigins) {
       );
       response.set(
         "Access-Control-Allow-Headers",
-        "Content-Type, X-Requested-With",
+        "Content-Type, X-Requested-With, Idempotency-Key",
       );
       response.status(204).end();
       return;

@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 import { createApp } from "../src/app.js";
 import { hashPassword } from "../src/auth/index.js";
 import { runMigrations } from "../src/persistence/migrate.js";
-import { resolveProgramRunWorkout } from "../src/programs.js";
+import {
+  recheckWorkoutSessionEligibility,
+  resolveProgramRunWorkout,
+} from "../src/programs.js";
 
 const migrationsDirectory = fileURLToPath(
   new URL("../migrations/", import.meta.url),
@@ -826,6 +829,415 @@ describe("WT-012 program import", () => {
       type: "rest",
       status: "pending",
     });
+  });
+
+  test("starts and replays one timezone-stamped session with prescription snapshots", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    const {
+      rows: [clock],
+    } = await database.query(
+      `SELECT extract(hour FROM now() AT TIME ZONE 'UTC')::int AS utc_hour`,
+    );
+    const timezone = clock.utc_hour < 10 ? "Etc/GMT+12" : "Pacific/Kiritimati";
+    await database.query(
+      "UPDATE profiles SET timezone = $2 WHERE user_id = $1",
+      [member.id, timezone],
+    );
+    const {
+      rows: [day],
+    } = await database.query(
+      `SELECT id FROM program_run_days
+       WHERE user_id = $1 AND run_id = $2 AND day_type = 'workout'
+         AND status = 'pending' ORDER BY week_number, slot_number LIMIT 1`,
+      [member.id, runId],
+    );
+    const key = randomUUID();
+    const start = () =>
+      request(app)
+        .post("/api/workout-sessions/start")
+        .set("Origin", origin)
+        .set("Cookie", cookie)
+        .set("Idempotency-Key", key)
+        .send({ runId, runDayId: day.id });
+
+    const first = await start();
+    expect(first.status).toBe(201);
+    expect(first.body).toMatchObject({
+      status: "draft",
+      version: 1,
+      startedTimezone: timezone,
+      exercises: [
+        {
+          name: "Known lift",
+          prescription: {
+            sets: [{ type: "standard", repMin: 5, repMax: 8, targetRir: 2 }],
+          },
+        },
+      ],
+    });
+
+    const replay = await start();
+    expect(replay.status).toBe(200);
+    expect(replay.body.id).toBe(first.body.id);
+    expect(replay.body.replayed).toBe(true);
+    const persisted = await database.query(
+      `SELECT sessions.started_timezone, sessions.started_local_date,
+              count(DISTINCT exercises.id)::int AS exercise_count,
+              count(sets.id)::int AS set_count
+       FROM workout_sessions AS sessions
+       LEFT JOIN session_exercises AS exercises
+         ON exercises.user_id = sessions.user_id AND exercises.session_id = sessions.id
+       LEFT JOIN session_sets AS sets
+         ON sets.user_id = exercises.user_id AND sets.session_exercise_id = exercises.id
+       WHERE sessions.id = $1
+       GROUP BY sessions.id`,
+      [first.body.id],
+    );
+    expect(persisted.rows[0]).toMatchObject({
+      started_timezone: timezone,
+      exercise_count: 1,
+      set_count: 1,
+    });
+    const {
+      rows: [expectedDate],
+    } = await database.query(
+      `SELECT to_char((now() AT TIME ZONE $1)::date, 'YYYY-MM-DD') AS local_date,
+              to_char((now() AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS utc_date`,
+      [timezone],
+    );
+    expect(first.body.startedLocalDate).toBe(expectedDate.local_date);
+    expect(first.body.startedLocalDate).not.toBe(expectedDate.utc_date);
+  });
+
+  test("snapshots repeated catalog exercises as separate ordered positions", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    const {
+      rows: [day],
+    } = await database.query(
+      `SELECT run_days.id, run_days.template_day_id
+       FROM program_run_days AS run_days
+       WHERE run_days.user_id = $1 AND run_days.run_id = $2
+         AND run_days.day_type = 'workout'
+       ORDER BY run_days.week_number, run_days.slot_number LIMIT 1`,
+      [member.id, runId],
+    );
+    const {
+      rows: [original],
+    } = await database.query(
+      `SELECT id, exercise_id, prescription_snapshot
+       FROM program_day_exercises
+       WHERE user_id = $1 AND day_id = $2 ORDER BY sort_order LIMIT 1`,
+      [member.id, day.template_day_id],
+    );
+    const duplicateExerciseId = randomUUID();
+    await database.query(
+      `INSERT INTO program_day_exercises
+         (id, user_id, day_id, exercise_id, sort_order, prescription_snapshot)
+       VALUES ($1, $2, $3, $4, 2, $5)`,
+      [
+        duplicateExerciseId,
+        member.id,
+        day.template_day_id,
+        original.exercise_id,
+        original.prescription_snapshot,
+      ],
+    );
+    await database.query(
+      `INSERT INTO program_sets
+         (user_id, day_exercise_id, set_number, set_type, rep_min, rep_max, target_rir)
+       SELECT user_id, $1, set_number, set_type, rep_min, rep_max, target_rir
+       FROM program_sets WHERE user_id = $2 AND day_exercise_id = $3`,
+      [duplicateExerciseId, member.id, original.id],
+    );
+    const started = await request(app)
+      .post("/api/workout-sessions/start")
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({ runId, runDayId: day.id });
+
+    expect(started.status).toBe(201);
+    expect(started.body.exercises).toHaveLength(2);
+    expect(
+      started.body.exercises.map((exercise) => exercise.snapshot.sortOrder),
+    ).toEqual([1, 2]);
+    expect(
+      started.body.exercises.map((exercise) => exercise.sets),
+    ).toHaveLength(2);
+    expect(started.body.exercises.map((exercise) => exercise.sets)).toEqual([
+      [expect.objectContaining({ setNumber: 1 })],
+      [expect.objectContaining({ setNumber: 1 })],
+    ]);
+  });
+
+  test("blocks starting or finalizing a second performance on the local start date", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    const {
+      rows: [workoutDay],
+    } = await database.query(
+      `SELECT id FROM program_run_days
+       WHERE user_id = $1 AND run_id = $2 AND day_type = 'workout'
+         AND status = 'pending' ORDER BY week_number, slot_number LIMIT 1`,
+      [member.id, runId],
+    );
+    await database.query(
+      `INSERT INTO workout_sessions
+         (user_id, status, has_performance, started_timezone, started_local_date,
+          finished_at)
+       SELECT $1, 'completed', true, profiles.timezone,
+              (now() AT TIME ZONE profiles.timezone)::date, now()
+       FROM profiles WHERE profiles.user_id = $1`,
+      [member.id],
+    );
+
+    const blockedStart = await request(app)
+      .post("/api/workout-sessions/start")
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({ runId, runDayId: workoutDay.id });
+    expect(blockedStart.status).toBe(409);
+
+    await database.query(
+      `DELETE FROM workout_sessions
+       WHERE user_id = $1 AND status = 'completed' AND has_performance`,
+      [member.id],
+    );
+    const started = await request(app)
+      .post("/api/workout-sessions/start")
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({ runId, runDayId: workoutDay.id });
+    expect(started.status).toBe(201);
+    await database.query(
+      `INSERT INTO workout_sessions
+         (user_id, status, has_performance, started_timezone, started_local_date,
+          finished_at)
+       SELECT $1, 'partial', true, $2, started_local_date, now()
+       FROM workout_sessions WHERE id = $3`,
+      [member.id, started.body.startedTimezone, started.body.id],
+    );
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const eligibility = await recheckWorkoutSessionEligibility(client, {
+        userId: member.id,
+        sessionId: started.body.id,
+      });
+      expect(eligibility.statusCode).toBe(409);
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+  });
+
+  test("serializes concurrent starts and resumes the same active draft", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    const {
+      rows: [day],
+    } = await database.query(
+      `SELECT id FROM program_run_days
+       WHERE user_id = $1 AND run_id = $2 AND day_type = 'workout'
+         AND status = 'pending' ORDER BY week_number, slot_number LIMIT 1`,
+      [member.id, runId],
+    );
+    const start = (key) =>
+      request(app)
+        .post("/api/workout-sessions/start")
+        .set("Origin", origin)
+        .set("Cookie", cookie)
+        .set("Idempotency-Key", key)
+        .send({ runId, runDayId: day.id });
+
+    const [first, second] = await Promise.all([
+      start(randomUUID()),
+      start(randomUUID()),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 201]);
+    expect(first.body.id).toBe(second.body.id);
+    expect(second.body.status).toBe("draft");
+    const sessions = await database.query(
+      "SELECT id FROM workout_sessions WHERE user_id = $1 AND status = 'draft'",
+      [member.id],
+    );
+    expect(sessions.rows).toHaveLength(1);
+  });
+
+  test("replays acknowledged set saves, rejects stale versions, and excludes finished drafts", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    const {
+      rows: [day],
+    } = await database.query(
+      `SELECT id FROM program_run_days
+       WHERE user_id = $1 AND run_id = $2 AND day_type = 'workout'
+         AND status = 'pending' ORDER BY week_number, slot_number LIMIT 1`,
+      [member.id, runId],
+    );
+    const started = await request(app)
+      .post("/api/workout-sessions/start")
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({ runId, runDayId: day.id });
+    expect(started.status).toBe(201);
+    const setId = started.body.exercises[0].sets[0].id;
+    const saveBody = {
+      version: 1,
+      sets: [{ id: setId, actualLoadKg: 42.5, actualReps: 6, actualRir: 2 }],
+    };
+    const saveKey = randomUUID();
+    const save = () =>
+      request(app)
+        .put(`/api/workout-sessions/${started.body.id}`)
+        .set("Origin", origin)
+        .set("Cookie", cookie)
+        .set("Idempotency-Key", saveKey)
+        .send(saveBody);
+
+    const acknowledged = await save();
+    expect(acknowledged.status).toBe(200);
+    expect(acknowledged.body).toMatchObject({
+      version: 2,
+      exercises: [
+        {
+          sets: [
+            {
+              actualLoadKg: "42.500",
+              actualReps: 6,
+              actualRir: 2,
+              checked: true,
+            },
+          ],
+        },
+      ],
+    });
+    const replay = await save();
+    expect(replay.status).toBe(200);
+    expect(replay.body.version).toBe(2);
+    expect(replay.body.replayed).toBe(true);
+
+    const stale = await request(app)
+      .put(`/api/workout-sessions/${started.body.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({ ...saveBody, version: 1 });
+    expect(stale.status).toBe(409);
+    expect(stale.body.currentVersion).toBe(2);
+
+    const changedReplay = await request(app)
+      .put(`/api/workout-sessions/${started.body.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", saveKey)
+      .send({
+        ...saveBody,
+        sets: [{ ...saveBody.sets[0], actualReps: 7 }],
+      });
+    expect(changedReplay.status).toBe(409);
+
+    const recovered = await request(app)
+      .get("/api/workout-sessions/active")
+      .set("Cookie", cookie);
+    expect(recovered.status).toBe(200);
+    expect(recovered.body.id).toBe(started.body.id);
+    expect(recovered.body.exercises[0].sets[0].actualReps).toBe(6);
+
+    await database.query(
+      `UPDATE workout_sessions
+       SET status = 'completed', has_performance = true, finished_at = now()
+       WHERE user_id = $1 AND id = $2`,
+      [member.id, started.body.id],
+    );
+    const noLongerActive = await request(app)
+      .get("/api/workout-sessions/active")
+      .set("Cookie", cookie);
+    expect(noLongerActive.body).toBeNull();
+    const finishedDraft = await request(app)
+      .get(`/api/workout-sessions/${started.body.id}`)
+      .set("Cookie", cookie);
+    expect(finishedDraft.status).toBe(404);
+
+    const other = await createAccount("other@example.test");
+    const otherCookie = await signIn(other);
+    const hidden = await request(app)
+      .get(`/api/workout-sessions/${started.body.id}`)
+      .set("Cookie", otherCookie);
+    expect(hidden.status).toBe(404);
+  });
+
+  test("rejects ineligible run slots and rechecks eligibility for finalization", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    const {
+      rows: [workoutDay],
+    } = await database.query(
+      `SELECT id FROM program_run_days
+       WHERE user_id = $1 AND run_id = $2 AND day_type = 'workout'
+         AND status = 'pending' ORDER BY week_number, slot_number LIMIT 1`,
+      [member.id, runId],
+    );
+    const {
+      rows: [restDay],
+    } = await database.query(
+      `SELECT id FROM program_run_days
+       WHERE user_id = $1 AND run_id = $2 AND day_type = 'rest'
+         AND status = 'pending' ORDER BY week_number, slot_number LIMIT 1`,
+      [member.id, runId],
+    );
+    const ineligible = await request(app)
+      .post("/api/workout-sessions/start")
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({ runId, runDayId: restDay.id });
+    expect(ineligible.status).toBe(409);
+
+    const started = await request(app)
+      .post("/api/workout-sessions/start")
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({ runId, runDayId: workoutDay.id });
+    expect(started.status).toBe(201);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const eligible = await recheckWorkoutSessionEligibility(client, {
+        userId: member.id,
+        sessionId: started.body.id,
+      });
+      expect(eligible.statusCode).toBe(200);
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+    await database.query(
+      "UPDATE program_run_days SET status = 'completed' WHERE id = $1",
+      [workoutDay.id],
+    );
+    const staleClient = await pool.connect();
+    try {
+      await staleClient.query("BEGIN");
+      const staleEligibility = await recheckWorkoutSessionEligibility(
+        staleClient,
+        {
+          userId: member.id,
+          sessionId: started.body.id,
+        },
+      );
+      expect(staleEligibility.statusCode).toBe(409);
+      await staleClient.query("ROLLBACK");
+    } finally {
+      staleClient.release();
+    }
   });
 
   test("keeps pending run slots aligned with future day-type edits", async () => {
