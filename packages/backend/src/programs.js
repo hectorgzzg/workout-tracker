@@ -403,9 +403,399 @@ async function activationErrors(client, userId, templateId) {
   return errors;
 }
 
+async function insertProgramRun(client, userId, templateId) {
+  const run = await client.query(
+    `INSERT INTO program_runs (user_id, template_id)
+     VALUES ($1, $2) RETURNING id`,
+    [userId, templateId],
+  );
+  await client.query(
+    `INSERT INTO program_run_days
+       (user_id, run_id, template_day_id, week_number, slot_number, day_type)
+     SELECT days.user_id, $3, days.id, weeks.week_number,
+            days.slot_number, days.day_type
+     FROM program_weeks AS weeks
+     JOIN program_days AS days
+       ON days.user_id = weeks.user_id AND days.week_id = weeks.id
+     WHERE weeks.user_id = $1 AND weeks.template_id = $2
+     ORDER BY weeks.week_number, days.slot_number`,
+    [userId, templateId, run.rows[0].id],
+  );
+  return run.rows[0].id;
+}
+
+async function getCurrentWeekNumber(client, userId, runId) {
+  const { rows } = await client.query(
+    `SELECT min(week_number)::int AS week_number
+     FROM program_run_days
+     WHERE user_id = $1 AND run_id = $2 AND status = 'pending'`,
+    [userId, runId],
+  );
+  return rows[0].week_number;
+}
+
+async function finishRunIfResolved(client, userId, runId, weekNumber) {
+  const { rows } = await client.query(
+    `SELECT count(*) FILTER (WHERE status = 'pending')::int AS pending,
+            max(week_number)::int AS final_week
+     FROM program_run_days WHERE user_id = $1 AND run_id = $2`,
+    [userId, runId],
+  );
+  if (rows[0].pending === 0 && rows[0].final_week === weekNumber) {
+    await client.query(
+      `UPDATE program_runs SET status = 'completed', ended_at = now()
+       WHERE user_id = $1 AND id = $2 AND status = 'active'`,
+      [userId, runId],
+    );
+    return "completed";
+  }
+  return "active";
+}
+
+async function resolveRunDay(client, userId, runId, runDayId, dayType, status) {
+  const run = await client.query(
+    `SELECT status FROM program_runs
+     WHERE user_id = $1 AND id = $2 FOR UPDATE`,
+    [userId, runId],
+  );
+  if (run.rows.length === 0) {
+    return { statusCode: 404, error: "Program run not found." };
+  }
+  if (run.rows[0].status !== "active") {
+    return {
+      statusCode: 409,
+      error: "Only the active program run can advance.",
+    };
+  }
+
+  const currentWeekNumber = await getCurrentWeekNumber(client, userId, runId);
+  const day = await client.query(
+    `SELECT week_number, day_type, status FROM program_run_days
+     WHERE user_id = $1 AND run_id = $2 AND id = $3 FOR UPDATE`,
+    [userId, runId, runDayId],
+  );
+  if (day.rows.length === 0) {
+    return { statusCode: 404, error: "Program run day not found." };
+  }
+  const currentDay = day.rows[0];
+  if (currentDay.day_type !== dayType) {
+    return { statusCode: 400, error: `This slot is not a ${dayType} day.` };
+  }
+  if (
+    currentDay.week_number !== currentWeekNumber ||
+    (status === "pending"
+      ? currentDay.status !== "rest_done"
+      : currentDay.status !== "pending")
+  ) {
+    return {
+      statusCode: 409,
+      error: "Only unresolved slots in the current week can be changed.",
+    };
+  }
+
+  await client.query(
+    `UPDATE program_run_days SET status = $1, resolved_at = $2
+     WHERE user_id = $3 AND run_id = $4 AND id = $5`,
+    [status, status === "pending" ? null : new Date(), userId, runId, runDayId],
+  );
+  const runStatus = await finishRunIfResolved(
+    client,
+    userId,
+    runId,
+    currentWeekNumber,
+  );
+  return {
+    statusCode: 200,
+    runStatus,
+    currentWeekNumber:
+      runStatus === "active"
+        ? await getCurrentWeekNumber(client, userId, runId)
+        : null,
+  };
+}
+
+export async function resolveProgramRunWorkout(
+  client,
+  { userId, runId, runDayId, outcome },
+) {
+  if (!["completed", "partial", "skipped"].includes(outcome)) {
+    return { statusCode: 400, error: "A valid workout outcome is required." };
+  }
+  return resolveRunDay(client, userId, runId, runDayId, "workout", outcome);
+}
+
+async function getCurrentProgramRun(pool, userId) {
+  const run = await pool.query(
+    `SELECT runs.id, runs.template_id, runs.status, runs.started_at,
+            templates.name,
+            (SELECT min(week_number)::int FROM program_run_days
+             WHERE user_id = runs.user_id AND run_id = runs.id AND status = 'pending')
+              AS current_week_number
+     FROM program_runs AS runs
+     JOIN program_templates AS templates
+       ON templates.user_id = runs.user_id AND templates.id = runs.template_id
+     WHERE runs.user_id = $1 AND runs.status = 'active'`,
+    [userId],
+  );
+  if (run.rows.length === 0) return null;
+  const current = run.rows[0];
+  const week = await pool.query(
+    `SELECT run_days.id, run_days.template_day_id, run_days.slot_number,
+            run_days.day_type, run_days.status, run_days.resolved_at, days.name,
+            weeks.week_type
+     FROM program_run_days AS run_days
+     JOIN program_days AS days
+       ON days.user_id = run_days.user_id AND days.id = run_days.template_day_id
+     JOIN program_weeks AS weeks
+       ON weeks.user_id = run_days.user_id
+      AND weeks.template_id = $4 AND weeks.week_number = run_days.week_number
+     WHERE run_days.user_id = $1 AND run_days.run_id = $2
+       AND run_days.week_number = $3
+     ORDER BY run_days.slot_number`,
+    [userId, current.id, current.current_week_number, current.template_id],
+  );
+  return {
+    id: current.id,
+    templateId: current.template_id,
+    name: current.name,
+    status: current.status,
+    startedAt: current.started_at,
+    currentWeekNumber: current.current_week_number,
+    week: {
+      weekNumber: current.current_week_number,
+      weekType: week.rows[0]?.week_type,
+      days: week.rows.map((day) => ({
+        id: day.id,
+        templateDayId: day.template_day_id,
+        slotNumber: day.slot_number,
+        type: day.day_type,
+        name: day.name,
+        status: day.status,
+        resolvedAt: day.resolved_at,
+      })),
+    },
+  };
+}
+
 export function createProgramsRouter({ pool }) {
   const router = express.Router();
   const requireSignIn = authenticate({ pool });
+
+  router.get(
+    "/program-runs/current",
+    requireSignIn,
+    async (request, response) => {
+      response.json(await getCurrentProgramRun(pool, request.auth.userId));
+    },
+  );
+
+  router.post(
+    "/program-runs/:runId/days/:runDayId/rest",
+    requireSignIn,
+    async (request, response) => {
+      const { runId, runDayId } = request.params;
+      const checked = request.body?.checked;
+      if (
+        !uuidPattern.test(runId) ||
+        !uuidPattern.test(runDayId) ||
+        typeof checked !== "boolean"
+      ) {
+        validationError(
+          response,
+          "A valid rest day and checked state are required.",
+        );
+        return;
+      }
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const result = await resolveRunDay(
+          client,
+          request.auth.userId,
+          runId,
+          runDayId,
+          "rest",
+          checked ? "rest_done" : "pending",
+        );
+        if (result.statusCode !== 200) {
+          await client.query("ROLLBACK");
+          response.status(result.statusCode).json({ error: result.error });
+          return;
+        }
+        await client.query("COMMIT");
+        response.json({
+          runId,
+          runStatus: result.runStatus,
+          currentWeekNumber: result.currentWeekNumber,
+        });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  );
+
+  router.post(
+    "/program-runs/:runId/stop",
+    requireSignIn,
+    async (request, response) => {
+      if (!uuidPattern.test(request.params.runId)) {
+        response.status(404).json({ error: "Program run not found." });
+        return;
+      }
+      if (request.body?.confirmed !== true) {
+        validationError(
+          response,
+          "Explicit confirmation is required to stop a program.",
+        );
+        return;
+      }
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT id FROM users WHERE id = $1 FOR UPDATE", [
+          request.auth.userId,
+        ]);
+        const run = await client.query(
+          `SELECT id, status FROM program_runs
+           WHERE user_id = $1 AND id = $2 FOR UPDATE`,
+          [request.auth.userId, request.params.runId],
+        );
+        if (run.rows.length === 0) {
+          await client.query("ROLLBACK");
+          response.status(404).json({ error: "Program run not found." });
+          return;
+        }
+        if (run.rows[0].status !== "active") {
+          await client.query("ROLLBACK");
+          response
+            .status(409)
+            .json({ error: "Only an active program can be stopped." });
+          return;
+        }
+        const draft = await client.query(
+          `SELECT id FROM workout_sessions
+           WHERE user_id = $1 AND program_run_id = $2 AND status = 'draft'`,
+          [request.auth.userId, request.params.runId],
+        );
+        if (draft.rows.length > 0) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "Resolve the active workout before stopping the program.",
+          });
+          return;
+        }
+        await client.query(
+          `UPDATE program_runs SET status = 'stopped', ended_at = now()
+           WHERE user_id = $1 AND id = $2`,
+          [request.auth.userId, request.params.runId],
+        );
+        await client.query("COMMIT");
+        response.json({ id: request.params.runId, status: "stopped" });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  );
+
+  router.post(
+    "/program-runs/:runId/restart",
+    requireSignIn,
+    async (request, response) => {
+      if (!uuidPattern.test(request.params.runId)) {
+        response.status(404).json({ error: "Program run not found." });
+        return;
+      }
+      if (request.body?.confirmed !== true) {
+        validationError(
+          response,
+          "Explicit confirmation is required to restart a program.",
+        );
+        return;
+      }
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT id FROM users WHERE id = $1 FOR UPDATE", [
+          request.auth.userId,
+        ]);
+        const previous = await client.query(
+          `SELECT id, template_id, status FROM program_runs
+           WHERE user_id = $1 AND id = $2 FOR UPDATE`,
+          [request.auth.userId, request.params.runId],
+        );
+        if (previous.rows.length === 0) {
+          await client.query("ROLLBACK");
+          response.status(404).json({ error: "Program run not found." });
+          return;
+        }
+        if (!["completed", "stopped"].includes(previous.rows[0].status)) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "Only a stopped or completed program can restart.",
+          });
+          return;
+        }
+        const activeRun = await client.query(
+          "SELECT id FROM program_runs WHERE user_id = $1 AND status = 'active'",
+          [request.auth.userId],
+        );
+        const draft = await client.query(
+          "SELECT id FROM workout_sessions WHERE user_id = $1 AND status = 'draft'",
+          [request.auth.userId],
+        );
+        if (activeRun.rows.length > 0 || draft.rows.length > 0) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "Resolve the current program and workout before restarting.",
+          });
+          return;
+        }
+        const errors = await activationErrors(
+          client,
+          request.auth.userId,
+          previous.rows[0].template_id,
+        );
+        if (Object.keys(errors).length > 0) {
+          await client.query("ROLLBACK");
+          validationError(
+            response,
+            "The saved program is no longer ready to restart.",
+            errors,
+          );
+          return;
+        }
+        const runId = await insertProgramRun(
+          client,
+          request.auth.userId,
+          previous.rows[0].template_id,
+        );
+        await client.query("COMMIT");
+        response.status(201).json({
+          id: runId,
+          templateId: previous.rows[0].template_id,
+          status: "active",
+          restartedFrom: request.params.runId,
+        });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        if (error.code === "23505") {
+          response
+            .status(409)
+            .json({ error: "Another program is already active." });
+          return;
+        }
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  );
 
   router.get("/programs", requireSignIn, async (request, response) => {
     const { rows } = await pool.query(
@@ -623,7 +1013,7 @@ export function createProgramsRouter({ pool }) {
               AND sessions.program_run_day_id = run_days.id
               AND sessions.status <> 'discarded'
              WHERE run_days.user_id = $1 AND run_days.template_day_id = $2
-               AND (run_days.status <> 'pending' OR sessions.id IS NOT NULL)
+                 AND (run_days.status <> 'pending' OR sessions.id IS NOT NULL)
            ) AS locked`,
           [request.auth.userId, request.params.dayId],
         );
@@ -646,6 +1036,14 @@ export function createProgramsRouter({ pool }) {
           `UPDATE program_days SET day_type = $1, name = $2
            WHERE user_id = $3 AND id = $4`,
           [day.type, day.name, request.auth.userId, request.params.dayId],
+        );
+        await client.query(
+          `UPDATE program_run_days AS run_days SET day_type = $1
+           FROM program_runs AS runs
+           WHERE runs.user_id = run_days.user_id AND runs.id = run_days.run_id
+             AND runs.status = 'active' AND run_days.status = 'pending'
+             AND run_days.user_id = $2 AND run_days.template_day_id = $3`,
+          [day.type, request.auth.userId, request.params.dayId],
         );
         await client.query(
           "DELETE FROM program_day_exercises WHERE user_id = $1 AND day_id = $2",
@@ -755,36 +1153,44 @@ export function createProgramsRouter({ pool }) {
           return;
         }
         const activeRun = await client.query(
-          "SELECT id FROM program_runs WHERE user_id = $1 AND status = 'active'",
+          `SELECT id FROM program_runs
+           WHERE user_id = $1 AND status = 'active' FOR UPDATE`,
           [request.auth.userId],
         );
         if (activeRun.rows.length > 0) {
-          await client.query("ROLLBACK");
-          response
-            .status(409)
-            .json({ error: "Another program is already active." });
-          return;
+          if (request.body?.replaceActive !== true) {
+            await client.query("ROLLBACK");
+            response
+              .status(409)
+              .json({ error: "Confirm replacement of the active program." });
+            return;
+          }
+          const draft = await client.query(
+            `SELECT id FROM workout_sessions
+             WHERE user_id = $1 AND status = 'draft'`,
+            [request.auth.userId],
+          );
+          if (draft.rows.length > 0) {
+            await client.query("ROLLBACK");
+            response.status(409).json({
+              error: "Resolve the active workout before replacing the program.",
+            });
+            return;
+          }
+          await client.query(
+            `UPDATE program_runs SET status = 'stopped', ended_at = now()
+             WHERE user_id = $1 AND id = $2 AND status = 'active'`,
+            [request.auth.userId, activeRun.rows[0].id],
+          );
         }
-        const run = await client.query(
-          `INSERT INTO program_runs (user_id, template_id)
-           VALUES ($1, $2) RETURNING id`,
-          [request.auth.userId, request.params.templateId],
-        );
-        await client.query(
-          `INSERT INTO program_run_days
-             (user_id, run_id, template_day_id, week_number, slot_number, day_type)
-           SELECT days.user_id, $3, days.id, weeks.week_number,
-                  days.slot_number, days.day_type
-           FROM program_weeks AS weeks
-           JOIN program_days AS days
-             ON days.user_id = weeks.user_id AND days.week_id = weeks.id
-           WHERE weeks.user_id = $1 AND weeks.template_id = $2
-           ORDER BY weeks.week_number, days.slot_number`,
-          [request.auth.userId, request.params.templateId, run.rows[0].id],
+        const runId = await insertProgramRun(
+          client,
+          request.auth.userId,
+          request.params.templateId,
         );
         await client.query("COMMIT");
         response.status(201).json({
-          id: run.rows[0].id,
+          id: runId,
           templateId: request.params.templateId,
           status: "active",
         });
