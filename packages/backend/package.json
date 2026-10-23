@@ -12,6 +12,7 @@
     "test": "npm run test --workspace=workout-tracker -- --selectProjects backend"
   },
   "dependencies": {
+    "csv-parse": "^7.0.3",
     "express": "^5.1.0",
     "express-rate-limit": "^8.7.1",
     "pg": "^8.23.1"

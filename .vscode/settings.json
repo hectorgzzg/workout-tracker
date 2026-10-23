@@ -167,6 +167,10 @@
     "/^git status --short && git diff --stat && node --input-type=module -e 'for \\(const url of \\[\"http://127\\.0\\.0\\.1:3000/health\", \"http://127\\.0\\.0\\.1:5173/\"\\]\\) \\{ try \\{ const response = await fetch\\(url\\); console\\.log\\(`\\$\\{url\\} \\$\\{response\\.status\\}`\\); \\} catch \\{ console\\.log\\(`\\$\\{url\\} unavailable`\\); \\} \\}'$/": {
       "approve": true,
       "matchCommandLine": true
+    },
+    "/^node --version && npm --version && npm ls csv-parse --depth=0$/": {
+      "approve": true,
+      "matchCommandLine": true
     }
   }
 }
