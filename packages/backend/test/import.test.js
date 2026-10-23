@@ -132,6 +132,117 @@ describe("WT-011 CSV parser and validation model", () => {
     expect(result.weekErrors).toEqual([]);
   });
 
+  test("parses MacroFactor metadata and cycle headers that share a row", () => {
+    const rows = [
+      [
+        "Program: Beginner Upper/Lower Split",
+        "Cycles: 1",
+        "Deload: Last Cycle",
+        "Color: Purple",
+        "Icon: Cookie",
+      ],
+      [
+        "Cycle 1",
+        "Exercise",
+        "Skipped",
+        "Notes",
+        "Set 1 Type",
+        "Set 1 Rep Range",
+        "Set 1 RIR",
+        "Set 1 Rest",
+        "Set 2 Type",
+        "Set 2 Rep Range",
+        "Set 2 RIR",
+        "Set 2 Rest",
+      ],
+      [
+        "Workout A @ Smartfit GYM",
+        "Close Grip Smith Machine Bench Press",
+        "No",
+        "First, quoted note",
+        "Standard Set",
+        "4 - 6",
+        "1",
+        "",
+        "Standard Set",
+        "4 - 6",
+        "2",
+        "",
+      ],
+      [
+        "",
+        "Bent-Over Underhand Grip Barbell Row",
+        "No",
+        "",
+        "Failure Set",
+        "11+",
+        "0",
+      ],
+      [
+        "Workout B @ Smartfit GYM",
+        "Leg Press",
+        "No",
+        "",
+        "Standard Set",
+        "7 - 9",
+        "2",
+      ],
+      ["Rest"],
+      [
+        "Workout C @ Smartfit GYM",
+        "Landmine Press",
+        "No",
+        "",
+        "Standard Set",
+        "2 - 4",
+        "3",
+      ],
+      [
+        "Workout D @ Smartfit GYM",
+        "Squat",
+        "No",
+        "",
+        "Standard Set",
+        "10 - 12",
+        "1",
+      ],
+      ["Rest"],
+      ["Rest"],
+    ];
+    const result = parseWorkoutCsv(rows.map(csvRow).join("\n"));
+
+    expect(result.metadata).toEqual({
+      Program: "Beginner Upper/Lower Split",
+      Cycles: "1",
+      Deload: "Last Cycle",
+      Color: "Purple",
+      Icon: "Cookie",
+    });
+    expect(result.weeks).toHaveLength(1);
+    expect(result.weeks[0].type).toBe("training");
+    expect(result.weeks[0].days).toHaveLength(7);
+    expect(result.weeks[0].days[0].exercises[0]).toMatchObject({
+      name: "Close Grip Smith Machine Bench Press",
+      notes: "First, quoted note",
+      sets: [
+        { type: "standard", repMin: 4, repMax: 6, rir: 1 },
+        { type: "standard", repMin: 4, repMax: 6, rir: 2 },
+      ],
+    });
+    expect(result.weeks[0].days[0].exercises[1].sets).toEqual([
+      { type: "failure", repMin: 11, repMax: null, rir: 0 },
+    ]);
+    expect(result.weeks[0].days[2]).toMatchObject({
+      type: "rest",
+      exercises: [],
+    });
+    expect(result.rowErrors).toEqual([]);
+    expect(result.structuralErrors).toEqual([]);
+    expect(result.weekErrors).toEqual([]);
+    expect(result.sourceSkipMarkers).toEqual([]);
+    expect(result.canActivate).toBe(true);
+  });
+
   test("ignores empty trailing set groups and reports invalid rows separately from structure", () => {
     const rows = [
       ["Program Name", "Validation fixture"],

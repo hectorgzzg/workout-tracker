@@ -41,6 +41,19 @@ function rowNumberFor(raw, linesRead) {
 
 function parseMetadata(record) {
   const metadata = {};
+  const colonFields = record
+    .map((value) =>
+      String(value ?? "")
+        .trim()
+        .match(/^([^:]+):\s*(.*)$/),
+    )
+    .filter(Boolean);
+  if (colonFields.length > 0) {
+    for (const [, key, value] of colonFields)
+      metadata[key.trim()] = value.trim();
+    return metadata;
+  }
+
   for (let index = 0; index + 1 < record.length; index += 2) {
     const key = String(record[index] ?? "").trim();
     if (key) metadata[key] = String(record[index + 1] ?? "").trim();
@@ -50,7 +63,8 @@ function parseMetadata(record) {
 
 function isHeaderRow(record) {
   return (
-    normalizeHeader(record[0]) === "workout" &&
+    (normalizeHeader(record[0]) === "workout" ||
+      /^cycle\s+\d+$/i.test(String(record[0] ?? "").trim())) &&
     normalizeHeader(record[1]) === "exercise"
   );
 }
@@ -103,15 +117,19 @@ function findHeader(records, result) {
   const header = headerEntry.record.map((value) => String(value ?? "").trim());
   const groups = setGroupColumns(header);
   const firstColumn = normalizeHeader(header[0]);
+  const cycleHeader = /^cycle\s+\d+$/i.test(header[0]);
   const exerciseColumn = header.findIndex(
     (value) => normalizeHeader(value) === "exercise",
+  );
+  const skippedColumn = header.findIndex(
+    (value) => normalizeHeader(value) === "skipped",
   );
   const notesColumn = header.findIndex((value) =>
     normalizeHeader(value).startsWith("notes"),
   );
 
   if (
-    !["workout", "day", "workoutday"].includes(firstColumn) ||
+    (!cycleHeader && !["workout", "day", "workoutday"].includes(firstColumn)) ||
     exerciseColumn < 0 ||
     groups.length === 0 ||
     groups.some(
@@ -135,6 +153,7 @@ function findHeader(records, result) {
     header,
     groups,
     exerciseColumn,
+    skippedColumn,
     notesColumn,
   };
 }
@@ -289,15 +308,20 @@ export function parseWorkoutCsv(source, { knownExerciseNames } = {}) {
 
   for (const entry of records) {
     const record = entry.record;
-    if (entry === records[0] || entry.rowNumber <= columns.entry.rowNumber) {
+    if (entry === records[0]) continue;
+    const first = cell(record, 0);
+    const cycleMatch = first.match(/^cycle\s+(\d+)\s*$/i);
+    const cycleHeader = cycleMatch && normalizeHeader(record[1]) === "exercise";
+    if (
+      entry.rowNumber < columns.entry.rowNumber ||
+      (entry.rowNumber === columns.entry.rowNumber && !cycleHeader)
+    ) {
       continue;
     }
-    if (isHeaderRow(record)) continue;
+    if (isHeaderRow(record) && !cycleHeader) continue;
 
-    const first = cell(record, 0);
     const exerciseName = cell(record, columns.exerciseColumn);
     const marker = firstNonempty(record);
-    const cycleMatch = first.match(/^cycle\s+(\d+)\s*$/i);
     if (cycleMatch) {
       const cycle = Number(cycleMatch[1]);
       if (cycleNumbers.has(cycle)) {
@@ -326,7 +350,11 @@ export function parseWorkoutCsv(source, { knownExerciseNames } = {}) {
       });
       continue;
     }
-    if (/\bskip(?:ped)?\b/i.test(record.map(String).join(" "))) {
+    const skippedValue = cell(record, columns.skippedColumn).toLowerCase();
+    if (
+      ["yes", "true", "1", "skip", "skipped"].includes(skippedValue) ||
+      /\bskip(?:ped)?\b/i.test(record.map(String).join(" "))
+    ) {
       result.sourceSkipMarkers.push({ rowNumber: entry.rowNumber, marker });
     }
 
