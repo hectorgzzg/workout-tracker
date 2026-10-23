@@ -422,3 +422,27 @@ Document completed development sessions here so future work can benefit from the
 
 - Frontend Jest passed 6 suites / 26 tests; WT-015 Playwright passed 3 mocked-API tests, including 390px and 1440px viewport overflow checks.
 - `npm run lint`, `npm run format:check`, `npm run build`, and `git diff --check` passed. Physical-device checks and history/draft integration remain pending their later tasks.
+
+### Session: WT-016 online drafts and conflict-safe persistence
+
+**Date:** 2026-10-23
+
+#### What was accomplished
+
+- Added session versioning and an idempotency request ledger; start, active-draft recovery, session retrieval, and acknowledged set persistence are authenticated and user-scoped.
+- Snapshotted prescriptions, exercise metadata, units, bodyweight factors, gym equipment, start timezone, and local start date. Repeated program exercise positions retain separate session identities.
+- Enforced current-run slot and local-date performance eligibility at start, and exposed a transaction-aware eligibility recheck for WT-023 finalization.
+- Connected workout detail Start/Resume to the active draft and replaced the tracker placeholder with online draft recovery, editable actual values, save status, and failure/retry behavior.
+- Allowed `Idempotency-Key` in cross-origin preflight and documented WT-016 evidence in the backlog.
+
+#### Key findings and decisions
+
+- Locking the user row serializes concurrent session starts and saves; the session version prevents stale tab/device writes, while the request hash distinguishes valid retries from key reuse with a changed payload.
+- Session snapshots group by ordered program-exercise identity, not catalog exercise identity, because the schema permits the same exercise in multiple workout positions.
+- The session start date is computed from the profile timezone in the database transaction and retained for subsequent eligibility checks even if profile settings change.
+- Actual finalization and finished-history listing remain in WT-023 and WT-025. No offline queue or Playwright check was added for this slice.
+
+#### Outcomes
+
+- Focused regressions confirmed and fixed missing idempotency CORS, absent tracker route wiring, same-date start/finalization eligibility, and repeated-exercise snapshot collisions.
+- Full Jest passed 22 suites / 129 tests. Lint, format check, production build, and `git diff --check` passed. Tests used PGlite; external PostgreSQL, Playwright/browser, and physical-device checks were not run.

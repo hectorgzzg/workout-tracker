@@ -208,6 +208,7 @@ function standardResponses(run = currentRun) {
       },
     },
     "/api/program-runs/current": { body: run },
+    "/api/workout-sessions/active": { body: null },
     "/api/programs/program-wt-015": { body: workoutProgram },
     "/api/catalog/exercises": { body: catalog },
   };

@@ -2,19 +2,18 @@
 
 Use this file for the current, unfinished task. It is ignored by Git and is not committed. At the end of the session, distill durable findings into `../session-notes.md` and reusable patterns into `../patterns-discovered.md`.
 
-- WT-013: future-program editing, manual deload setup, and activation prerequisites.
-- WT-015: Home calendar/current-program ribbon, workout detail, and exercise Info.
+- WT-016: online drafts and conflict-safe session persistence.
 
 ## Current Task
 
-- Implementation, automated verification, and mocked browser checks complete. Physical-device validation remains pending.
+- WT-016 implementation and automated verification complete; no Playwright/browser or physical-device validation was run.
 
 ## Approach
 
-- Reused authenticated current-run, program-detail, and catalog APIs; no backend/schema change was required.
-- Added accessible week/month calendar controls, distinct seven-slot run states, workout detail prescriptions and role-tagged muscle pills, and exercise Info metadata.
-- Vite exposed a duplicate leftover Home template after component tests passed; removed it and confirmed the browser suite/build caught the issue.
-- Verification: frontend Jest 6 suites / 26 tests, WT-015 Playwright 3 tests, lint, format check, production build, and `git diff --check` passed. Browser tests used mocked API data; physical-device checks remain pending.
+- Added versioned, idempotent session persistence, database snapshots, local-date/run eligibility checks, and active-draft recovery using existing session/program schema.
+- Integrated Start/Resume with a basic online tracker save flow. Kept finalization and finished-history presentation for WT-023 and WT-025; added no offline queue.
+- Focused regressions exposed the missing tracker route, CORS header, date guard, and duplicate catalog exercise snapshot collision; fixed and verified each locally.
+- Verification: full Jest 22 suites / 129 tests, lint, format check, production build, and `git diff --check` passed. PGlite only; browser/device checks remain pending.
 
 ## WT-012 Context
 

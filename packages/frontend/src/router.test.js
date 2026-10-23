@@ -4,6 +4,7 @@ import { createMemoryHistory } from "vue-router";
 import { afterEach, jest } from "@jest/globals";
 import { authState } from "./auth.js";
 import { createAppRouter } from "./router.js";
+import FeatureView from "./views/FeatureView.vue";
 import exerciseInfoViewModule from "./views/ExerciseInfoView.vue";
 import programsViewModule from "./views/ProgramsView.vue";
 import settingsViewModule from "./views/SettingsView.vue";
@@ -200,10 +201,15 @@ test("registers dedicated workout detail and exercise info routes", () => {
     router.getRoutes().find((route) => route.name === "exercise-info")
       .components.default,
   ).toBe(ExerciseInfoView);
+  expect(
+    router.getRoutes().find((route) => route.name === "tracker").components
+      .default,
+  ).not.toBe(FeatureView);
 });
 
 test("renders a workout's target muscles, prescriptions, and navigation affordances", async () => {
   globalThis.fetch = jest.fn(async (url) => {
+    if (url.endsWith("/api/workout-sessions/active")) return jsonResponse(null);
     if (url.endsWith("/api/program-runs/current"))
       return jsonResponse(programRun);
     if (url.endsWith("/api/programs/program-1"))
@@ -223,10 +229,9 @@ test("renders a workout's target muscles, prescriptions, and navigation affordan
     screen.getByRole("region", { name: "Target muscles" }),
   ).toHaveTextContent("Quadriceps");
   expect(screen.getByText("Standard · 5-8 reps · RIR 2")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Start Workout" })).toHaveAttribute(
-    "href",
-    "#/tracker",
-  );
+  expect(
+    screen.getByRole("button", { name: "Start Workout" }),
+  ).toBeInTheDocument();
   expect(
     screen.getByRole("link", { name: "Barbell squat info" }),
   ).toHaveAttribute("href", "#/exercises/exercise-1/info");
@@ -268,6 +273,8 @@ test("preserves long workout and exercise names and offers Resume without creati
     },
   };
   globalThis.fetch = jest.fn(async (url) => {
+    if (url.endsWith("/api/workout-sessions/active"))
+      return jsonResponse({ id: "session-1", runDayId: "run-day-1" });
     if (url.endsWith("/api/program-runs/current"))
       return jsonResponse(inProgressRun);
     if (url.endsWith("/api/programs/program-1"))
@@ -286,10 +293,9 @@ test("preserves long workout and exercise names and offers Resume without creati
   expect(
     screen.getByRole("heading", { name: longExerciseName }),
   ).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Resume Workout" })).toHaveAttribute(
-    "href",
-    "#/tracker",
-  );
+  expect(
+    screen.getByRole("button", { name: "Resume Workout" }),
+  ).toBeInTheDocument();
   expect(
     globalThis.fetch.mock.calls.every(
       ([, options]) => !options?.method || options.method === "GET",
@@ -301,7 +307,7 @@ test("reports workout loading failures and shows the unavailable empty state aft
   globalThis.fetch = jest
     .fn()
     .mockRejectedValueOnce(new Error("network down"))
-    .mockResolvedValueOnce(jsonResponse(null));
+    .mockResolvedValue(jsonResponse(null));
   globalThis.__WORKOUT_TRACKER_API_ORIGIN__ = "https://api.example.test";
 
   renderRoute("/workouts/day-1");
