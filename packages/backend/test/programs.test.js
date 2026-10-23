@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createApp } from "../src/app.js";
 import { hashPassword } from "../src/auth/index.js";
 import { runMigrations } from "../src/persistence/migrate.js";
+import { resolveProgramRunWorkout } from "../src/programs.js";
 
 const migrationsDirectory = fileURLToPath(
   new URL("../migrations/", import.meta.url),
@@ -181,6 +182,65 @@ describe("WT-012 program import", () => {
       .send(importPayload());
     expect(response.status).toBe(201);
     return response.body.id;
+  }
+
+  async function createReadyProgram(cookie) {
+    const templateId = await createImportedProgram(cookie);
+    const deload = await request(app)
+      .post(`/api/programs/${templateId}/deload`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ days: makeDeloadDays() });
+    expect(deload.status).toBe(201);
+    const activated = await request(app)
+      .post(`/api/programs/${templateId}/activate`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ confirmed: true });
+    expect(activated.status).toBe(201);
+    return { templateId, runId: activated.body.id };
+  }
+
+  async function resolveWorkoutSlot(runId, runDayId, outcome = "completed") {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await resolveProgramRunWorkout(client, {
+        userId: member.id,
+        runId,
+        runDayId,
+        outcome,
+      });
+      if (result.statusCode === 200) await client.query("COMMIT");
+      else await client.query("ROLLBACK");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async function resolveWeek(cookie, runId, weekNumber) {
+    const { rows } = await database.query(
+      `SELECT id, day_type FROM program_run_days
+       WHERE run_id = $1 AND week_number = $2 ORDER BY slot_number`,
+      [runId, weekNumber],
+    );
+    for (const day of rows) {
+      if (day.day_type === "workout") {
+        const result = await resolveWorkoutSlot(runId, day.id);
+        expect(result.statusCode).toBe(200);
+      } else {
+        const response = await request(app)
+          .post(`/api/program-runs/${runId}/days/${day.id}/rest`)
+          .set("Origin", origin)
+          .set("Cookie", cookie)
+          .send({ checked: true });
+        expect(response.status).toBe(200);
+      }
+    }
   }
 
   function makeDeloadDays(slotCount = 7) {
@@ -736,5 +796,344 @@ describe("WT-012 program import", () => {
       [member.id],
     );
     expect(runs.rows).toEqual([]);
+  });
+
+  test("returns the user's active run and its flexible slot state", async () => {
+    const cookie = await signIn();
+    const { templateId, runId } = await createReadyProgram(cookie);
+
+    const current = await request(app)
+      .get("/api/program-runs/current")
+      .set("Cookie", cookie);
+
+    expect(current.status).toBe(200);
+    expect(current.body).toMatchObject({
+      id: runId,
+      templateId,
+      status: "active",
+      currentWeekNumber: 1,
+    });
+    expect(current.body.week.weekNumber).toBe(1);
+    expect(current.body.week.weekType).toBe("training");
+    expect(current.body.week.days).toHaveLength(7);
+    expect(current.body.week.days[0]).toMatchObject({
+      slotNumber: 1,
+      type: "workout",
+      status: "pending",
+    });
+    expect(current.body.week.days[1]).toMatchObject({
+      slotNumber: 2,
+      type: "rest",
+      status: "pending",
+    });
+  });
+
+  test("keeps pending run slots aligned with future day-type edits", async () => {
+    const cookie = await signIn();
+    const { templateId, runId } = await createReadyProgram(cookie);
+    const program = await request(app)
+      .get(`/api/programs/${templateId}`)
+      .set("Cookie", cookie);
+    const restDay = program.body.weeks[0].days[1];
+    const changedDay = await request(app)
+      .put(`/api/programs/${templateId}/days/${restDay.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({
+        type: "workout",
+        name: "Added workout",
+        exercises: [
+          {
+            exerciseId: knownExerciseId,
+            sets: [{ type: "standard", repMin: 5, repMax: 8, rir: 2 }],
+          },
+        ],
+      });
+    expect(changedDay.status).toBe(200);
+
+    const current = await request(app)
+      .get("/api/program-runs/current")
+      .set("Cookie", cookie);
+    expect(current.body.week.days[1].type).toBe("workout");
+    expect(
+      (await resolveWorkoutSlot(runId, current.body.week.days[1].id))
+        .statusCode,
+    ).toBe(200);
+  });
+
+  test("resolves current-week slots out of order and prevents repeat or rewind", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    const current = await request(app)
+      .get("/api/program-runs/current")
+      .set("Cookie", cookie);
+    const slots = current.body.week.days;
+    const resolveRest = (day, checked) =>
+      request(app)
+        .post(`/api/program-runs/${runId}/days/${day.id}/rest`)
+        .set("Origin", origin)
+        .set("Cookie", cookie)
+        .send({ checked });
+
+    const concurrentResolutions = await Promise.all([
+      resolveRest(slots[6], true),
+      resolveRest(slots[6], true),
+    ]);
+    expect(concurrentResolutions.map(({ status }) => status).sort()).toEqual([
+      200, 409,
+    ]);
+    expect((await resolveRest(slots[1], true)).status).toBe(200);
+    expect((await resolveRest(slots[1], false)).status).toBe(200);
+    expect((await resolveRest(slots[1], true)).status).toBe(200);
+    expect(
+      (await resolveWorkoutSlot(runId, slots[2].id, "partial")).statusCode,
+    ).toBe(200);
+    expect(
+      (await resolveWorkoutSlot(runId, slots[0].id, "completed")).statusCode,
+    ).toBe(200);
+    expect((await resolveRest(slots[1], true)).status).toBe(409);
+    for (const slot of slots.slice(3, 6)) {
+      expect((await resolveRest(slot, true)).status).toBe(200);
+    }
+
+    const advanced = await request(app)
+      .get("/api/program-runs/current")
+      .set("Cookie", cookie);
+    expect(advanced.body.currentWeekNumber).toBe(2);
+    expect(advanced.body.week.weekType).toBe("deload");
+    expect(advanced.body.week.days).toHaveLength(7);
+    expect(
+      advanced.body.week.days.every((day) => day.status === "pending"),
+    ).toBe(true);
+    expect((await resolveRest(slots[6], false)).status).toBe(409);
+  });
+
+  test.each([1, 2, 3, 4, 5, 6, 7])(
+    "advances when slot %i is the final resolved slot",
+    async (finalSlotNumber) => {
+      const cookie = await signIn();
+      const { runId } = await createReadyProgram(cookie);
+      const current = await request(app)
+        .get("/api/program-runs/current")
+        .set("Cookie", cookie);
+      const days = current.body.week.days;
+      const finalDay = days.find((day) => day.slotNumber === finalSlotNumber);
+
+      for (const day of days.filter(({ id }) => id !== finalDay.id)) {
+        if (day.type === "workout") {
+          expect(
+            (await resolveWorkoutSlot(runId, day.id, "partial")).statusCode,
+          ).toBe(200);
+        } else {
+          const resolved = await request(app)
+            .post(`/api/program-runs/${runId}/days/${day.id}/rest`)
+            .set("Origin", origin)
+            .set("Cookie", cookie)
+            .send({ checked: true });
+          expect(resolved.status).toBe(200);
+        }
+      }
+
+      if (finalDay.type === "workout") {
+        expect(
+          (await resolveWorkoutSlot(runId, finalDay.id, "completed"))
+            .statusCode,
+        ).toBe(200);
+      } else {
+        const resolved = await request(app)
+          .post(`/api/program-runs/${runId}/days/${finalDay.id}/rest`)
+          .set("Origin", origin)
+          .set("Cookie", cookie)
+          .send({ checked: true });
+        expect(resolved.status).toBe(200);
+      }
+      const advanced = await request(app)
+        .get("/api/program-runs/current")
+        .set("Cookie", cookie);
+      expect(advanced.body.currentWeekNumber).toBe(2);
+    },
+  );
+
+  test("finishes after the final deload and restarts as fresh preserved runs", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    await resolveWeek(cookie, runId, 1);
+    await resolveWeek(cookie, runId, 2);
+
+    const finished = await database.query(
+      "SELECT status, ended_at FROM program_runs WHERE id = $1",
+      [runId],
+    );
+    expect(finished.rows[0].status).toBe("completed");
+    expect(finished.rows[0].ended_at).not.toBeNull();
+    const current = await request(app)
+      .get("/api/program-runs/current")
+      .set("Cookie", cookie);
+    expect(current.body).toBeNull();
+
+    let previousRunId = runId;
+    for (let index = 0; index < 2; index += 1) {
+      const restarted = await request(app)
+        .post(`/api/program-runs/${previousRunId}/restart`)
+        .set("Origin", origin)
+        .set("Cookie", cookie)
+        .send({ confirmed: true });
+      expect(restarted.status).toBe(201);
+      expect(restarted.body.id).not.toBe(previousRunId);
+      const freshDays = await database.query(
+        `SELECT week_number, status FROM program_run_days
+         WHERE run_id = $1 ORDER BY week_number, slot_number`,
+        [restarted.body.id],
+      );
+      expect(freshDays.rows).toHaveLength(14);
+      expect(freshDays.rows.every((day) => day.status === "pending")).toBe(
+        true,
+      );
+      const originalDays = await database.query(
+        "SELECT count(*)::int AS count FROM program_run_days WHERE run_id = $1",
+        [runId],
+      );
+      expect(originalDays.rows[0].count).toBe(14);
+      previousRunId = restarted.body.id;
+      await resolveWeek(cookie, previousRunId, 1);
+      await resolveWeek(cookie, previousRunId, 2);
+    }
+    const runCount = await database.query(
+      "SELECT count(*)::int AS count FROM program_runs WHERE user_id = $1",
+      [member.id],
+    );
+    expect(runCount.rows[0].count).toBe(3);
+  });
+
+  test("stops a program without losing prior run state and permits restart edits", async () => {
+    const cookie = await signIn();
+    const { templateId, runId } = await createReadyProgram(cookie);
+    const unconfirmed = await request(app)
+      .post(`/api/program-runs/${runId}/stop`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({});
+    expect(unconfirmed.status).toBe(400);
+
+    const stopped = await request(app)
+      .post(`/api/program-runs/${runId}/stop`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ confirmed: true });
+    expect(stopped.status).toBe(200);
+    const retained = await database.query(
+      `SELECT runs.status, count(days.id)::int AS slot_count
+       FROM program_runs AS runs JOIN program_run_days AS days
+         ON days.user_id = runs.user_id AND days.run_id = runs.id
+       WHERE runs.id = $1 GROUP BY runs.status`,
+      [runId],
+    );
+    expect(retained.rows).toEqual([{ status: "stopped", slot_count: 14 }]);
+
+    const restarted = await request(app)
+      .post(`/api/program-runs/${runId}/restart`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ confirmed: true });
+    expect(restarted.status).toBe(201);
+
+    const program = await request(app)
+      .get(`/api/programs/${templateId}`)
+      .set("Cookie", cookie);
+    const restDay = program.body.weeks[0].days[1];
+    const changedRest = await request(app)
+      .put(`/api/programs/${templateId}/days/${restDay.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({
+        type: "workout",
+        name: "Changed after stop",
+        exercises: [
+          {
+            exerciseId: knownExerciseId,
+            sets: [{ type: "standard", repMin: 5, repMax: 8, rir: 2 }],
+          },
+        ],
+      });
+    expect(changedRest.status).toBe(200);
+    const priorDay = await database.query(
+      `SELECT day_type, status FROM program_run_days
+       WHERE run_id = $1 AND week_number = 1 AND slot_number = 2`,
+      [runId],
+    );
+    expect(priorDay.rows).toEqual([{ day_type: "rest", status: "pending" }]);
+    const restartedDay = await database.query(
+      `SELECT day_type, status FROM program_run_days
+       WHERE run_id = $1 AND week_number = 1 AND slot_number = 2`,
+      [restarted.body.id],
+    );
+    expect(restartedDay.rows).toEqual([
+      { day_type: "workout", status: "pending" },
+    ]);
+  });
+
+  test("replaces an active run only explicitly and preserves its progression", async () => {
+    const cookie = await signIn();
+    const previous = await createReadyProgram(cookie);
+    const nextTemplateId = await createImportedProgram(cookie);
+    const deload = await request(app)
+      .post(`/api/programs/${nextTemplateId}/deload`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ days: makeDeloadDays() });
+    expect(deload.status).toBe(201);
+    const previousCurrent = await request(app)
+      .get("/api/program-runs/current")
+      .set("Cookie", cookie);
+    const firstRest = previousCurrent.body.week.days[1];
+    const resolved = await request(app)
+      .post(`/api/program-runs/${previous.runId}/days/${firstRest.id}/rest`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ checked: true });
+    expect(resolved.status).toBe(200);
+
+    const activeDraft = await database.query(
+      `INSERT INTO workout_sessions (user_id, started_local_date)
+       VALUES ($1, '2026-10-23') RETURNING id`,
+      [member.id],
+    );
+
+    const unconfirmed = await request(app)
+      .post(`/api/programs/${nextTemplateId}/activate`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ confirmed: true });
+    expect(unconfirmed.status).toBe(409);
+    const replacement = await request(app)
+      .post(`/api/programs/${nextTemplateId}/activate`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ confirmed: true, replaceActive: true });
+    expect(replacement.status).toBe(409);
+    await database.query(
+      "UPDATE workout_sessions SET status = 'discarded' WHERE id = $1",
+      [activeDraft.rows[0].id],
+    );
+    const replaced = await request(app)
+      .post(`/api/programs/${nextTemplateId}/activate`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ confirmed: true, replaceActive: true });
+    expect(replaced.status).toBe(201);
+    expect(replaced.body.templateId).toBe(nextTemplateId);
+    const previousState = await database.query(
+      `SELECT runs.status, days.status AS day_status,
+              count(all_days.id)::int AS total_days
+       FROM program_runs AS runs
+       JOIN program_run_days AS days
+         ON days.run_id = runs.id AND days.week_number = 1 AND days.slot_number = 2
+       JOIN program_run_days AS all_days ON all_days.run_id = runs.id
+       WHERE runs.id = $1 GROUP BY runs.status, days.status`,
+      [previous.runId],
+    );
+    expect(previousState.rows).toEqual([
+      { status: "stopped", day_status: "rest_done", total_days: 14 },
+    ]);
   });
 });

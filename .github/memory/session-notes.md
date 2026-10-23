@@ -375,3 +375,28 @@ Document completed development sessions here so future work can benefit from the
 - Backend WT-013 tests passed 10 scenarios; Programs component tests passed 3, including the full edit/deload/confirmation/activation path. Full Jest passed 20 suites / 96 tests.
 - `npm run lint`, `npm run format:check`, direct stylesheet formatting check, production build, and editor diagnostics passed.
 - Browser walkthrough, external PostgreSQL, and physical-device checks were not run; browser acceptance remains pending.
+
+### Session: WT-014 program runs and flexible progression
+
+**Date:** 2026-10-23
+
+#### What was accomplished
+
+- Added authenticated current-run retrieval, current-week rest check/undo, a workout-outcome resolution primitive for WT-023, and transactional stop, restart, and explicit replacement operations.
+- Kept current week derived from the earliest pending run-day; final deload resolution completes the run, while restart creates fresh run-day instances for every saved week.
+- Synchronized pending active-run day types when future template slots are edited; unresolved slots remain editable after restart while prior run-day types stay unchanged.
+- Recorded WT-014 API evidence and remaining integration boundaries in the implementation backlog.
+
+#### Key findings and decisions
+
+- The existing run/run-day schema and partial unique active-run index supported WT-014 without a migration.
+- Locking the run row serializes day transitions; only pending slots in the earliest unresolved week can resolve. Rest undo is limited to rest slots in that current week.
+- Stopped/completed runs retain their run-day rows. Resolved/session-backed template days remain protected, while unresolved future days can still be edited after restart; only pending slots on the current active run synchronize their day type.
+- Restart reuses the saved template, including its configured appended deload, but creates a new run identity.
+- Workout resolution remains an internal transaction-aware helper until WT-023 owns real session finalization. Run replacement and stop reject active workout drafts instead of silently discarding them.
+
+#### Outcomes
+
+- The first current-run API regression returned 404 as expected; later tests reproduced stale active-run slot types after template edits and a restart edit lock that blocked future program changes. Both edge cases were corrected and covered.
+- `packages/backend/test/programs.test.js` passed 23 tests, including each of the seven possible final slots. Full backend passed 14 suites / 91 tests; lint, format check, and `git diff --check` passed.
+- Tests used isolated PGlite. External PostgreSQL and browser/UI verification were not run; those remain outside the WT-014 backend acceptance completed here.

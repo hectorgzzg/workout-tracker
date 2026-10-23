@@ -184,6 +184,7 @@
       "approve": true,
       "matchCommandLine": true
     },
-    "diff": true
+    "diff": true,
+    "git check-ignore": true
   }
 }
