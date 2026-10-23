@@ -329,3 +329,25 @@ Document completed development sessions here so future work can benefit from the
 - The initial missing-module RED and the later `1.005 kg` boundary RED both reproduced the missing behavior; focused WT-010 tests passed 4 tests after implementation.
 - Full Jest passed 17 suites / 74 tests. Lint, format check, frontend build, editor diagnostics, and `git diff --check` passed.
 - Persistence tests used isolated PGlite. External PostgreSQL and browser validation were not run; tracker UI integration remains WT-017.
+
+### Session: WT-012 CSV import preview and draft creation
+
+**Date:** 2026-10-22
+
+#### What was accomplished
+
+- Added authenticated CSV preview and transactional partial-import endpoints, an idempotency ledger migration, and user-scoped saved-program listing.
+- Added the mobile-first Programs import view with source file/paste input, week/day/set preview, exact and unresolved mappings, invalid-row skips, source-marker acknowledgement, and explicit create confirmation.
+- Updated the WT-012 backlog with test and browser evidence.
+
+#### Key findings and decisions
+
+- Imports always create new draft templates. They do not update prior templates, delete history, or discard active workout drafts; activation and replacement remain later program-run behavior.
+- The preview is revalidated by the server at confirmation. Empty workouts after skipped rows are blocked, and all template descendants plus the idempotency ledger commit in one transaction.
+- Same-key retries return the same draft; reusing a key for different data conflicts. The temporary browser walkthrough used a disposable in-memory PGlite account and catalog fixture.
+
+#### Outcomes
+
+- `packages/backend/test/programs.test.js` passed 7 tests; `packages/frontend/src/views/ProgramsView.test.js` passed 2 tests. Full Jest passed 20 suites / 92 tests.
+- Lint, format check, production build, editor diagnostics, and `git diff --check` passed. Integrated Chromium browser validation at 375x844 CSS pixels exercised draft creation and six-to-seven-slot error recovery with no horizontal overflow.
+- External PostgreSQL and physical mobile devices were not tested. The development browser services use ephemeral data.

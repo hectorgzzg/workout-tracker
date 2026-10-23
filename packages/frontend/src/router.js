@@ -5,11 +5,13 @@ import catalogViewModule from "./views/CatalogView.vue";
 import FeatureView from "./views/FeatureView.vue";
 import HomeView from "./views/HomeView.vue";
 import LoginView from "./views/LoginView.vue";
+import programsViewModule from "./views/ProgramsView.vue";
 import RegisterView from "./views/RegisterView.vue";
 import settingsViewModule from "./views/SettingsView.vue";
 
 const CatalogView = catalogViewModule.default ?? catalogViewModule;
 const SettingsView = settingsViewModule.default ?? settingsViewModule;
+const ProgramsView = programsViewModule.default ?? programsViewModule;
 
 export function createAppRouter(
   history = createWebHashHistory(import.meta.env?.BASE_URL ?? "/"),
@@ -38,13 +40,8 @@ export function createAppRouter(
       {
         path: "/programs",
         name: "programs",
-        component: FeatureView,
-        meta: {
-          requiresAuth: true,
-          pageTitle: "Programs",
-          emptyTitle: "No active program",
-          pageMessage: "Program setup is not available yet.",
-        },
+        component: ProgramsView,
+        meta: { requiresAuth: true },
       },
       {
         path: "/workouts/:workoutId",
