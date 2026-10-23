@@ -8,11 +8,48 @@ function makeIdempotencyKey() {
   );
 }
 
+function blankProgramSet() {
+  return { type: "standard", repMin: 8, repMax: 10, rir: 2 };
+}
+
+function blankProgramDay() {
+  return { type: "rest", name: "Rest", exercises: [] };
+}
+
+function serializeProgramDay(day) {
+  return {
+    type: day.type,
+    name: day.name,
+    exercises: day.exercises.map((exercise) => ({
+      exerciseId: exercise.exerciseId,
+      notes: exercise.notes,
+      sets: exercise.sets.map((set) => ({
+        type: set.type,
+        repMin: Number(set.repMin),
+        repMax:
+          set.repMax === "" || set.repMax === null ? null : Number(set.repMax),
+        rir: Number(set.rir),
+      })),
+    })),
+  };
+}
+
 export default {
   data() {
     return {
       state: reactive({
         programs: [],
+        selectedProgram: null,
+        catalogExercises: [],
+        deloadSourceWeekNumber: null,
+        programLoading: false,
+        editingDayId: null,
+        dayForm: null,
+        deloadDays: Array.from({ length: 7 }, blankProgramDay),
+        savingDay: false,
+        savingDeload: false,
+        activating: false,
+        activationConfirmed: false,
         source: "",
         name: "",
         preview: null,
@@ -80,6 +117,58 @@ export default {
         !this.state.saving,
       );
     },
+    hasDeload() {
+      return Boolean(
+        this.state.selectedProgram?.weeks.some(
+          (week) => week.type === "deload",
+        ),
+      );
+    },
+    programReadyToActivate() {
+      const program = this.state.selectedProgram;
+      if (!program || !this.hasDeload || program.status === "active") {
+        return false;
+      }
+      return Boolean(
+        program.weeks.length > 0 &&
+        program.weeks.at(-1).type === "deload" &&
+        program.weeks.every(
+          (week) =>
+            week.days.length === 7 &&
+            week.days.some((day) => day.type === "workout") &&
+            week.days.every(
+              (day) =>
+                day.type === "rest" ||
+                (day.exercises.length > 0 &&
+                  day.exercises.every(
+                    (exercise) =>
+                      exercise.exerciseId && exercise.sets.length > 0,
+                  )),
+            ),
+        ),
+      );
+    },
+    canActivate() {
+      return Boolean(
+        this.programReadyToActivate &&
+        this.state.activationConfirmed &&
+        !this.state.activating,
+      );
+    },
+    canConfigureDeload() {
+      return Boolean(
+        this.state.deloadDays.some((day) => day.type === "workout") &&
+        this.state.deloadDays.every(
+          (day) =>
+            day.type === "rest" ||
+            (day.exercises.length > 0 &&
+              day.exercises.every(
+                (exercise) => exercise.exerciseId && exercise.sets.length > 0,
+              )),
+        ) &&
+        !this.state.savingDeload,
+      );
+    },
   },
   mounted() {
     this.loadPrograms();
@@ -118,6 +207,181 @@ export default {
         this.state.error = error.message;
       } finally {
         this.state.loadingPrograms = false;
+      }
+    },
+    async openProgram(program) {
+      this.state.error = "";
+      this.state.message = "";
+      this.state.programLoading = true;
+      this.state.editingDayId = null;
+      this.state.activationConfirmed = false;
+      try {
+        const [detail, exercises] = await Promise.all([
+          this.requestPrograms(`/api/programs/${program.id}`),
+          this.requestPrograms("/api/catalog/exercises"),
+        ]);
+        this.state.selectedProgram = detail;
+        this.state.catalogExercises = exercises;
+        const sourceWeek = detail.weeks
+          .filter((week) => week.type === "training")
+          .at(-1);
+        if (!detail.weeks.some((week) => week.type === "deload")) {
+          this.state.deloadSourceWeekNumber = sourceWeek?.weekNumber ?? null;
+          this.state.deloadDays = this.deloadDaysFromWeek(sourceWeek);
+        }
+      } catch (error) {
+        this.state.error = error.message;
+      } finally {
+        this.state.programLoading = false;
+      }
+    },
+    closeProgram() {
+      this.state.selectedProgram = null;
+      this.state.editingDayId = null;
+      this.state.activationConfirmed = false;
+    },
+    deloadDaysFromWeek(week) {
+      const sourceDays = new Map(
+        (week?.days ?? []).map((day) => [day.slotNumber, day]),
+      );
+      return Array.from({ length: 7 }, (_, index) => {
+        const sourceDay = sourceDays.get(index + 1);
+        if (!sourceDay || sourceDay.type === "rest") {
+          return {
+            ...blankProgramDay(),
+            name: sourceDay?.name || "Rest",
+          };
+        }
+        return {
+          type: "workout",
+          name: sourceDay.name,
+          exercises: sourceDay.exercises.map((exercise) => ({
+            exerciseId: exercise.exerciseId,
+            notes: exercise.notes ?? "",
+            sets: [],
+          })),
+        };
+      });
+    },
+    beginEditDay(day) {
+      this.state.editingDayId = day.id;
+      this.state.dayForm = {
+        type: day.type,
+        name: day.name ?? "",
+        exercises: day.exercises.map((exercise) => ({
+          exerciseId: exercise.exerciseId,
+          notes: exercise.notes ?? "",
+          sets: exercise.sets.map((set) => ({
+            type: set.type,
+            repMin: set.repMin,
+            repMax: set.repMax ?? "",
+            rir: set.rir,
+          })),
+        })),
+      };
+      this.state.error = "";
+      this.state.message = "";
+    },
+    resetDayType(day) {
+      day.exercises = [];
+      day.name = day.type === "rest" ? "Rest" : "Workout";
+    },
+    addExercise(day) {
+      day.exercises.push({
+        exerciseId: "",
+        notes: "",
+        sets: [blankProgramSet()],
+      });
+    },
+    removeExercise(day, index) {
+      day.exercises.splice(index, 1);
+    },
+    addSet(exercise) {
+      exercise.sets.push(blankProgramSet());
+    },
+    removeSet(exercise, index) {
+      exercise.sets.splice(index, 1);
+    },
+    updateSetType(set) {
+      if (set.type === "failure") set.rir = 0;
+    },
+    cancelDayEdit() {
+      this.state.editingDayId = null;
+      this.state.dayForm = null;
+    },
+    async saveProgramDay(day) {
+      if (!this.state.dayForm) return;
+      this.state.savingDay = true;
+      this.state.error = "";
+      this.state.message = "";
+      try {
+        const saved = await this.requestPrograms(
+          `/api/programs/${this.state.selectedProgram.id}/days/${day.id}`,
+          {
+            method: "PUT",
+            body: JSON.stringify(serializeProgramDay(this.state.dayForm)),
+          },
+        );
+        day.type = saved.type;
+        day.name = saved.name;
+        day.exercises = saved.exercises;
+        this.state.message = `Day ${day.slotNumber} saved.`;
+        this.cancelDayEdit();
+      } catch (error) {
+        this.state.error = error.message;
+        this.state.validationErrors = error.validationErrors;
+      } finally {
+        this.state.savingDay = false;
+      }
+    },
+    async configureDeload() {
+      this.state.savingDeload = true;
+      this.state.error = "";
+      this.state.message = "";
+      try {
+        const programName = this.state.selectedProgram.name;
+        await this.requestPrograms(
+          `/api/programs/${this.state.selectedProgram.id}/deload`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              days: this.state.deloadDays.map(serializeProgramDay),
+            }),
+          },
+        );
+        this.state.deloadDays = Array.from({ length: 7 }, blankProgramDay);
+        this.state.activationConfirmed = false;
+        await this.openProgram(this.state.selectedProgram);
+        this.state.message = `Manual deload added to ${programName}.`;
+        await this.loadPrograms();
+      } catch (error) {
+        this.state.error = error.message;
+        this.state.validationErrors = error.validationErrors;
+      } finally {
+        this.state.savingDeload = false;
+      }
+    },
+    async activateProgram() {
+      this.state.activating = true;
+      this.state.error = "";
+      this.state.message = "";
+      try {
+        await this.requestPrograms(
+          `/api/programs/${this.state.selectedProgram.id}/activate`,
+          {
+            method: "POST",
+            body: JSON.stringify({ confirmed: true }),
+          },
+        );
+        this.state.selectedProgram.status = "active";
+        this.state.activationConfirmed = false;
+        this.state.message = `${this.state.selectedProgram.name} is active.`;
+        await this.loadPrograms();
+      } catch (error) {
+        this.state.error = error.message;
+        this.state.validationErrors = error.validationErrors;
+      } finally {
+        this.state.activating = false;
       }
     },
     invalidateRequest() {
@@ -498,10 +762,462 @@ export default {
         </p>
         <ul v-else class="saved-program-list">
           <li v-for="program in state.programs" :key="program.id">
-            <strong>{{ program.name }}</strong>
-            <span>{{ program.weekCount }} weeks</span>
+            <div class="saved-program-meta">
+              <strong>{{ program.name }}</strong>
+              <span>
+                {{ program.weekCount }}
+                {{ program.weekCount === 1 ? "week" : "weeks" }} ·
+                {{ program.status === "active" ? "Active" : "Draft" }}
+              </span>
+            </div>
+            <button
+              class="text-button"
+              type="button"
+              :aria-label="`Open ${program.name}`"
+              @click="openProgram(program)"
+            >
+              Open
+            </button>
           </li>
         </ul>
+
+        <section
+          v-if="state.selectedProgram"
+          class="program-detail"
+          aria-labelledby="selected-program-title"
+        >
+          <header class="program-detail-heading">
+            <div>
+              <h3 id="selected-program-title">
+                {{ state.selectedProgram.name }}
+              </h3>
+              <span>
+                {{
+                  state.selectedProgram.status === "active" ? "Active" : "Draft"
+                }}
+              </span>
+            </div>
+            <button class="text-button" type="button" @click="closeProgram">
+              Close
+            </button>
+          </header>
+
+          <p v-if="state.programLoading" role="status">
+            Loading program details…
+          </p>
+          <template v-else>
+            <p class="programs-note">
+              Only unresolved future days can be changed. Session prescriptions
+              stay as recorded.
+            </p>
+
+            <div class="program-weeks">
+              <section
+                v-for="week in state.selectedProgram.weeks"
+                :key="week.id"
+                class="program-week"
+              >
+                <header>
+                  <h3>Week {{ week.weekNumber }}</h3>
+                  <span>{{
+                    week.type === "deload" ? "Manual deload" : "Training"
+                  }}</span>
+                </header>
+                <ol class="program-days">
+                  <li
+                    v-for="day in week.days"
+                    :key="day.id"
+                    class="program-day"
+                  >
+                    <div class="program-day-heading">
+                      <h4>Day {{ day.slotNumber }} · {{ day.name }}</h4>
+                      <button
+                        v-if="state.editingDayId !== day.id"
+                        class="text-button"
+                        type="button"
+                        :aria-label="`Edit Day ${day.slotNumber}`"
+                        @click="beginEditDay(day)"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                    <template v-if="state.editingDayId === day.id">
+                      <form
+                        class="program-day-editor"
+                        @submit.prevent="saveProgramDay(day)"
+                      >
+                        <label class="program-field">
+                          Day type
+                          <select
+                            v-model="state.dayForm.type"
+                            @change="resetDayType(state.dayForm)"
+                          >
+                            <option value="workout">Workout</option>
+                            <option value="rest">Rest</option>
+                          </select>
+                        </label>
+                        <label class="program-field">
+                          Day name
+                          <input v-model="state.dayForm.name" maxlength="120" />
+                        </label>
+                        <template v-if="state.dayForm.type === 'workout'">
+                          <fieldset
+                            v-for="(exercise, exerciseIndex) in state.dayForm
+                              .exercises"
+                            :key="exerciseIndex"
+                            class="program-exercise-editor"
+                          >
+                            <legend>Exercise {{ exerciseIndex + 1 }}</legend>
+                            <label class="program-field">
+                              Exercise
+                              <select
+                                v-model="exercise.exerciseId"
+                                :aria-label="`Day exercise ${exerciseIndex + 1}`"
+                                required
+                              >
+                                <option value="">Choose an exercise</option>
+                                <option
+                                  v-for="entry in state.catalogExercises"
+                                  :key="entry.id"
+                                  :value="entry.id"
+                                >
+                                  {{ entry.name }}
+                                </option>
+                              </select>
+                            </label>
+                            <label class="program-field">
+                              Notes
+                              <input
+                                v-model="exercise.notes"
+                                maxlength="2000"
+                              />
+                            </label>
+                            <fieldset
+                              v-for="(set, setIndex) in exercise.sets"
+                              :key="setIndex"
+                              class="program-set-editor"
+                            >
+                              <legend>Set {{ setIndex + 1 }}</legend>
+                              <label class="program-field">
+                                Set type
+                                <select
+                                  v-model="set.type"
+                                  :aria-label="`Set type, set ${setIndex + 1}`"
+                                  @change="updateSetType(set)"
+                                >
+                                  <option value="standard">Standard</option>
+                                  <option value="warmup">Warmup</option>
+                                  <option value="failure">Failure</option>
+                                </select>
+                              </label>
+                              <label class="program-field">
+                                Minimum reps
+                                <input
+                                  v-model.number="set.repMin"
+                                  :aria-label="`Rep minimum, set ${setIndex + 1}`"
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  required
+                                />
+                              </label>
+                              <label class="program-field">
+                                Maximum reps
+                                <input
+                                  v-model.number="set.repMax"
+                                  :aria-label="`Rep maximum, set ${setIndex + 1}`"
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                />
+                              </label>
+                              <label class="program-field">
+                                Target RIR
+                                <input
+                                  v-model.number="set.rir"
+                                  :aria-label="`Target RIR, set ${setIndex + 1}`"
+                                  type="number"
+                                  min="0"
+                                  max="10"
+                                  step="1"
+                                  :disabled="set.type === 'failure'"
+                                  required
+                                />
+                              </label>
+                              <button
+                                class="text-button"
+                                type="button"
+                                @click="removeSet(exercise, setIndex)"
+                              >
+                                Remove set
+                              </button>
+                            </fieldset>
+                            <button
+                              class="text-button"
+                              type="button"
+                              @click="addSet(exercise)"
+                            >
+                              Add set
+                            </button>
+                            <button
+                              class="text-button"
+                              type="button"
+                              @click="
+                                removeExercise(state.dayForm, exerciseIndex)
+                              "
+                            >
+                              Remove exercise
+                            </button>
+                          </fieldset>
+                          <button
+                            class="text-button"
+                            type="button"
+                            @click="addExercise(state.dayForm)"
+                          >
+                            Add exercise
+                          </button>
+                        </template>
+                        <div class="program-editor-actions">
+                          <button
+                            class="button button--primary"
+                            type="submit"
+                            :disabled="state.savingDay"
+                          >
+                            {{ state.savingDay ? "Saving…" : "Save day" }}
+                          </button>
+                          <button
+                            class="text-button"
+                            type="button"
+                            @click="cancelDayEdit"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    </template>
+                    <template v-else>
+                      <p v-if="day.type === 'rest'" class="program-rest">
+                        Rest
+                      </p>
+                      <ul v-else class="program-exercises">
+                        <li
+                          v-for="exercise in day.exercises"
+                          :key="exercise.id"
+                        >
+                          <strong>{{ exercise.name }}</strong>
+                          <ul class="program-sets">
+                            <li v-for="set in exercise.sets" :key="set.id">
+                              {{ formatSet(set) }}
+                            </li>
+                          </ul>
+                        </li>
+                      </ul>
+                    </template>
+                  </li>
+                </ol>
+              </section>
+            </div>
+
+            <section
+              v-if="!hasDeload && state.selectedProgram.status !== 'active'"
+              class="manual-deload"
+              aria-labelledby="manual-deload-title"
+            >
+              <div class="program-preview-heading">
+                <h3 id="manual-deload-title">Manual deload</h3>
+                <span>7 slots</span>
+              </div>
+              <p class="programs-note">
+                Exercise structure is copied from training Week
+                {{ state.deloadSourceWeekNumber }}. Sets are left blank for you
+                to prescribe.
+              </p>
+              <ol class="program-days">
+                <li
+                  v-for="(day, dayIndex) in state.deloadDays"
+                  :key="dayIndex"
+                  class="program-day"
+                >
+                  <h4>Day {{ dayIndex + 1 }}</h4>
+                  <label class="program-field">
+                    Day type
+                    <select
+                      v-model="day.type"
+                      :aria-label="`Deload day ${dayIndex + 1} type`"
+                      @change="resetDayType(day)"
+                    >
+                      <option value="workout">Workout</option>
+                      <option value="rest">Rest</option>
+                    </select>
+                  </label>
+                  <label class="program-field">
+                    Day name
+                    <input v-model="day.name" maxlength="120" />
+                  </label>
+                  <template v-if="day.type === 'workout'">
+                    <fieldset
+                      v-for="(exercise, exerciseIndex) in day.exercises"
+                      :key="exerciseIndex"
+                      class="program-exercise-editor"
+                    >
+                      <legend>Exercise {{ exerciseIndex + 1 }}</legend>
+                      <label class="program-field">
+                        Exercise
+                        <select
+                          v-model="exercise.exerciseId"
+                          :aria-label="`Deload day ${dayIndex + 1} exercise ${exerciseIndex + 1}`"
+                          required
+                        >
+                          <option value="">Choose an exercise</option>
+                          <option
+                            v-for="entry in state.catalogExercises"
+                            :key="entry.id"
+                            :value="entry.id"
+                          >
+                            {{ entry.name }}
+                          </option>
+                        </select>
+                      </label>
+                      <label class="program-field">
+                        Notes
+                        <input v-model="exercise.notes" maxlength="2000" />
+                      </label>
+                      <fieldset
+                        v-for="(set, setIndex) in exercise.sets"
+                        :key="setIndex"
+                        class="program-set-editor"
+                      >
+                        <legend>Set {{ setIndex + 1 }}</legend>
+                        <label class="program-field">
+                          Set type
+                          <select
+                            v-model="set.type"
+                            :aria-label="`Deload day ${dayIndex + 1} set ${setIndex + 1} type`"
+                            @change="updateSetType(set)"
+                          >
+                            <option value="standard">Standard</option>
+                            <option value="warmup">Warmup</option>
+                            <option value="failure">Failure</option>
+                          </select>
+                        </label>
+                        <label class="program-field">
+                          Minimum reps
+                          <input
+                            v-model.number="set.repMin"
+                            :aria-label="`Deload day ${dayIndex + 1} minimum reps, set ${setIndex + 1}`"
+                            type="number"
+                            min="1"
+                            step="1"
+                            required
+                          />
+                        </label>
+                        <label class="program-field">
+                          Maximum reps
+                          <input
+                            v-model.number="set.repMax"
+                            :aria-label="`Deload day ${dayIndex + 1} maximum reps, set ${setIndex + 1}`"
+                            type="number"
+                            min="1"
+                            step="1"
+                          />
+                        </label>
+                        <label class="program-field">
+                          Target RIR
+                          <input
+                            v-model.number="set.rir"
+                            :aria-label="`Deload day ${dayIndex + 1} target RIR, set ${setIndex + 1}`"
+                            type="number"
+                            min="0"
+                            max="10"
+                            step="1"
+                            :disabled="set.type === 'failure'"
+                            required
+                          />
+                        </label>
+                        <button
+                          class="text-button"
+                          type="button"
+                          @click="removeSet(exercise, setIndex)"
+                        >
+                          Remove set
+                        </button>
+                      </fieldset>
+                      <button
+                        class="text-button"
+                        type="button"
+                        @click="addSet(exercise)"
+                      >
+                        Add set
+                      </button>
+                      <button
+                        class="text-button"
+                        type="button"
+                        @click="removeExercise(day, exerciseIndex)"
+                      >
+                        Remove exercise
+                      </button>
+                    </fieldset>
+                    <button
+                      class="text-button"
+                      type="button"
+                      :aria-label="`Add exercise to deload day ${dayIndex + 1}`"
+                      @click="addExercise(day)"
+                    >
+                      Add exercise
+                    </button>
+                  </template>
+                </li>
+              </ol>
+              <button
+                class="button button--primary"
+                type="button"
+                :disabled="!canConfigureDeload"
+                @click="configureDeload"
+              >
+                {{
+                  state.savingDeload
+                    ? "Saving deload…"
+                    : "Configure manual deload"
+                }}
+              </button>
+            </section>
+
+            <section
+              v-if="state.selectedProgram.status !== 'active'"
+              class="program-activation"
+              aria-label="Program activation"
+            >
+              <p v-if="!hasDeload" class="programs-note">
+                Add the manual deload before activation.
+              </p>
+              <template v-else>
+                <p v-if="!canActivate" class="programs-note">
+                  Activation requires seven valid slots in every week and at
+                  least one mapped workout with complete sets per week.
+                </p>
+                <label class="program-confirm">
+                  <input
+                    v-model="state.activationConfirmed"
+                    type="checkbox"
+                    :disabled="!programReadyToActivate"
+                  />
+                  <span>
+                    I confirm this program and its appended deload are ready to
+                    activate.
+                  </span>
+                </label>
+                <button
+                  class="button button--primary"
+                  type="button"
+                  :disabled="!canActivate"
+                  @click="activateProgram"
+                >
+                  {{ state.activating ? "Activating…" : "Activate program" }}
+                </button>
+              </template>
+            </section>
+          </template>
+        </section>
       </section>
     </div>
   </section>

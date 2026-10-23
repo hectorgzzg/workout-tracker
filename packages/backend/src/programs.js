@@ -5,6 +5,8 @@ import { parseWorkoutCsv } from "./import.js";
 
 const maximumSourceBytes = 512 * 1024;
 const idempotencyKeyPattern = /^[A-Za-z0-9._:-]{8,128}$/;
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -103,6 +105,304 @@ function validationError(response, error, errors = {}) {
   response.status(400).json({ error, errors });
 }
 
+function normalizeProgramDay(value) {
+  if (
+    !isRecord(value) ||
+    !["workout", "rest"].includes(value.type) ||
+    typeof value.name !== "string" ||
+    value.name.trim().length === 0 ||
+    value.name.trim().length > 120 ||
+    !Array.isArray(value.exercises) ||
+    value.exercises.length > 100
+  ) {
+    return null;
+  }
+
+  const exercises = [];
+  for (const exercise of value.exercises) {
+    if (
+      !isRecord(exercise) ||
+      typeof exercise.exerciseId !== "string" ||
+      !uuidPattern.test(exercise.exerciseId) ||
+      typeof (exercise.notes ?? "") !== "string" ||
+      (exercise.notes ?? "").length > 2000 ||
+      !Array.isArray(exercise.sets) ||
+      exercise.sets.length === 0 ||
+      exercise.sets.length > 100
+    ) {
+      return null;
+    }
+    const sets = [];
+    for (const set of exercise.sets) {
+      if (
+        !isRecord(set) ||
+        !["standard", "warmup", "failure"].includes(set.type) ||
+        !Number.isInteger(set.repMin) ||
+        set.repMin < 1 ||
+        set.repMin > 32767 ||
+        (set.repMax !== null &&
+          (!Number.isInteger(set.repMax) ||
+            set.repMax < set.repMin ||
+            set.repMax > 32767)) ||
+        !Number.isInteger(set.rir) ||
+        set.rir < 0 ||
+        set.rir > 10 ||
+        (set.type === "failure" && set.rir !== 0)
+      ) {
+        return null;
+      }
+      sets.push({
+        type: set.type,
+        repMin: set.repMin,
+        repMax: set.repMax ?? null,
+        rir: set.rir,
+      });
+    }
+    exercises.push({
+      exerciseId: exercise.exerciseId,
+      notes: exercise.notes ?? "",
+      sets,
+    });
+  }
+
+  if (
+    (value.type === "workout" && exercises.length === 0) ||
+    (value.type === "rest" && exercises.length !== 0)
+  ) {
+    return null;
+  }
+  return { type: value.type, name: value.name.trim(), exercises };
+}
+
+async function missingExerciseIds(client, days) {
+  const requestedIds = [
+    ...new Set(
+      days.flatMap((day) => day.exercises.map(({ exerciseId }) => exerciseId)),
+    ),
+  ];
+  if (requestedIds.length === 0) return [];
+  const { rows } = await client.query(
+    "SELECT id FROM exercises WHERE id = ANY($1::uuid[])",
+    [requestedIds],
+  );
+  const foundIds = new Set(rows.map(({ id }) => id));
+  return requestedIds.filter((id) => !foundIds.has(id));
+}
+
+async function insertProgramDay(client, userId, weekId, slotNumber, day) {
+  const dayResult = await client.query(
+    `INSERT INTO program_days (user_id, week_id, slot_number, day_type, name)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [userId, weekId, slotNumber, day.type, day.name],
+  );
+  const dayId = dayResult.rows[0].id;
+  for (const [exerciseIndex, exercise] of day.exercises.entries()) {
+    const prescriptionSnapshot = {
+      notes: exercise.notes,
+      sets: exercise.sets.map((set) => ({
+        type: set.type,
+        repMin: set.repMin,
+        repMax: set.repMax,
+        targetRir: set.rir,
+      })),
+    };
+    const exerciseResult = await client.query(
+      `INSERT INTO program_day_exercises
+         (user_id, day_id, exercise_id, sort_order, prescription_snapshot)
+       VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
+      [
+        userId,
+        dayId,
+        exercise.exerciseId,
+        exerciseIndex + 1,
+        JSON.stringify(prescriptionSnapshot),
+      ],
+    );
+    for (const [setIndex, set] of exercise.sets.entries()) {
+      await client.query(
+        `INSERT INTO program_sets
+           (user_id, day_exercise_id, set_number, set_type, rep_min, rep_max, target_rir)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          userId,
+          exerciseResult.rows[0].id,
+          setIndex + 1,
+          set.type,
+          set.repMin,
+          set.repMax,
+          set.rir,
+        ],
+      );
+    }
+  }
+  return dayId;
+}
+
+async function getProgramDetail(pool, userId, templateId) {
+  const templateResult = await pool.query(
+    `SELECT templates.id, templates.name,
+            EXISTS (
+              SELECT 1 FROM program_runs AS runs
+              WHERE runs.user_id = templates.user_id
+                AND runs.template_id = templates.id AND runs.status = 'active'
+            ) AS active
+     FROM program_templates AS templates
+     WHERE templates.user_id = $1 AND templates.id = $2`,
+    [userId, templateId],
+  );
+  if (templateResult.rows.length === 0) return null;
+  const template = templateResult.rows[0];
+  const weekResult = await pool.query(
+    `SELECT id, week_number, week_type FROM program_weeks
+     WHERE user_id = $1 AND template_id = $2 ORDER BY week_number`,
+    [userId, templateId],
+  );
+  const weeks = weekResult.rows.map((week) => ({
+    id: week.id,
+    weekNumber: week.week_number,
+    type: week.week_type,
+    days: [],
+  }));
+  if (weeks.length === 0) {
+    return {
+      id: template.id,
+      name: template.name,
+      status: template.active ? "active" : "draft",
+      weeks,
+    };
+  }
+
+  const weekById = new Map(weeks.map((week) => [week.id, week]));
+  const weekIds = weeks.map(({ id }) => id);
+  const dayResult = await pool.query(
+    `SELECT id, week_id, slot_number, day_type, name FROM program_days
+     WHERE user_id = $1 AND week_id = ANY($2::uuid[])
+     ORDER BY slot_number`,
+    [userId, weekIds],
+  );
+  const days = dayResult.rows.map((day) => ({
+    id: day.id,
+    slotNumber: day.slot_number,
+    type: day.day_type,
+    name: day.name,
+    exercises: [],
+  }));
+  const dayById = new Map(days.map((day) => [day.id, day]));
+  for (const row of dayResult.rows)
+    weekById.get(row.week_id).days.push(dayById.get(row.id));
+
+  const dayIds = days.map(({ id }) => id);
+  if (dayIds.length > 0) {
+    const exerciseResult = await pool.query(
+      `SELECT day_exercises.id, day_exercises.day_id, day_exercises.exercise_id,
+              day_exercises.prescription_snapshot, exercises.name AS exercise_name
+       FROM program_day_exercises AS day_exercises
+       JOIN exercises ON exercises.id = day_exercises.exercise_id
+       WHERE day_exercises.user_id = $1 AND day_exercises.day_id = ANY($2::uuid[])
+       ORDER BY day_exercises.sort_order`,
+      [userId, dayIds],
+    );
+    const exerciseById = new Map();
+    for (const exercise of exerciseResult.rows) {
+      const snapshot = exercise.prescription_snapshot ?? {};
+      const item = {
+        id: exercise.id,
+        exerciseId: exercise.exercise_id,
+        name: exercise.exercise_name,
+        notes: snapshot.notes ?? "",
+        sets: [],
+      };
+      exerciseById.set(item.id, item);
+      dayById.get(exercise.day_id).exercises.push(item);
+    }
+    const exerciseIds = [...exerciseById.keys()];
+    if (exerciseIds.length > 0) {
+      const setResult = await pool.query(
+        `SELECT id, day_exercise_id, set_number, set_type, rep_min, rep_max, target_rir
+         FROM program_sets WHERE user_id = $1 AND day_exercise_id = ANY($2::uuid[])
+         ORDER BY set_number`,
+        [userId, exerciseIds],
+      );
+      for (const set of setResult.rows) {
+        exerciseById.get(set.day_exercise_id).sets.push({
+          id: set.id,
+          setNumber: set.set_number,
+          type: set.set_type,
+          repMin: set.rep_min,
+          repMax: set.rep_max,
+          rir: set.target_rir,
+        });
+      }
+    }
+  }
+  return {
+    id: template.id,
+    name: template.name,
+    status: template.active ? "active" : "draft",
+    weeks,
+  };
+}
+
+async function activationErrors(client, userId, templateId) {
+  const { rows: weeks } = await client.query(
+    `SELECT id, week_number, week_type FROM program_weeks
+     WHERE user_id = $1 AND template_id = $2 ORDER BY week_number`,
+    [userId, templateId],
+  );
+  const errors = {};
+  const deloadWeeks = weeks.filter(({ week_type: type }) => type === "deload");
+  if (deloadWeeks.length !== 1 || deloadWeeks[0]?.id !== weeks.at(-1)?.id) {
+    errors.deload = "required";
+  }
+  if (weeks.length === 0) errors.weeks = "required";
+  for (const [index, week] of weeks.entries()) {
+    if (
+      week.week_number !== index + 1 ||
+      week.week_type !== (index === weeks.length - 1 ? "deload" : "training")
+    ) {
+      errors.weeks = "must_be_ordered_with_appended_deload";
+    }
+    const { rows: days } = await client.query(
+      `SELECT days.id, days.day_type,
+              count(DISTINCT day_exercises.id)::int AS exercise_count,
+              count(DISTINCT exercises.id)::int AS mapped_count
+       FROM program_days AS days
+       LEFT JOIN program_day_exercises AS day_exercises
+         ON day_exercises.user_id = days.user_id AND day_exercises.day_id = days.id
+       LEFT JOIN exercises ON exercises.id = day_exercises.exercise_id
+       WHERE days.user_id = $1 AND days.week_id = $2
+       GROUP BY days.id ORDER BY days.slot_number`,
+      [userId, week.id],
+    );
+    if (days.length !== 7) errors.days = "exactly_seven_required";
+    if (!days.some((day) => day.day_type === "workout")) {
+      errors.workouts = "at_least_one_required";
+    }
+    if (
+      days.some((day) => day.day_type === "workout" && day.exercise_count === 0)
+    ) {
+      errors.workouts = "must_contain_exercises";
+    }
+    if (days.some((day) => day.exercise_count !== day.mapped_count)) {
+      errors.mappings = "unresolved";
+    }
+    const { rows: exercisesWithoutSets } = await client.query(
+      `SELECT day_exercises.id
+       FROM program_days AS days
+       JOIN program_day_exercises AS day_exercises
+         ON day_exercises.user_id = days.user_id AND day_exercises.day_id = days.id
+       LEFT JOIN program_sets AS sets
+         ON sets.user_id = day_exercises.user_id
+        AND sets.day_exercise_id = day_exercises.id
+       WHERE days.user_id = $1 AND days.week_id = $2
+       GROUP BY day_exercises.id HAVING count(sets.id) = 0`,
+      [userId, week.id],
+    );
+    if (exercisesWithoutSets.length > 0) errors.sets = "required";
+  }
+  return errors;
+}
+
 export function createProgramsRouter({ pool }) {
   const router = express.Router();
   const requireSignIn = authenticate({ pool });
@@ -110,7 +410,12 @@ export function createProgramsRouter({ pool }) {
   router.get("/programs", requireSignIn, async (request, response) => {
     const { rows } = await pool.query(
       `SELECT templates.id, templates.name, templates.created_at,
-              count(DISTINCT weeks.id)::int AS week_count
+              count(DISTINCT weeks.id)::int AS week_count,
+              EXISTS (
+                SELECT 1 FROM program_runs AS runs
+                WHERE runs.user_id = templates.user_id
+                  AND runs.template_id = templates.id AND runs.status = 'active'
+              ) AS active
        FROM program_templates AS templates
        LEFT JOIN program_weeks AS weeks
          ON weeks.user_id = templates.user_id AND weeks.template_id = templates.id
@@ -125,9 +430,378 @@ export function createProgramsRouter({ pool }) {
         name: row.name,
         createdAt: row.created_at,
         weekCount: row.week_count,
+        status: row.active ? "active" : "draft",
       })),
     );
   });
+
+  router.get(
+    "/programs/:templateId",
+    requireSignIn,
+    async (request, response) => {
+      if (!uuidPattern.test(request.params.templateId)) {
+        response.status(404).json({ error: "Program not found." });
+        return;
+      }
+      const program = await getProgramDetail(
+        pool,
+        request.auth.userId,
+        request.params.templateId,
+      );
+      if (!program) {
+        response.status(404).json({ error: "Program not found." });
+        return;
+      }
+      response.json(program);
+    },
+  );
+
+  router.post(
+    "/programs/:templateId/deload",
+    requireSignIn,
+    async (request, response) => {
+      const rawDays = request.body?.days;
+      if (!Array.isArray(rawDays) || rawDays.length !== 7) {
+        validationError(
+          response,
+          "A manual deload must contain exactly seven day slots.",
+          { days: "exactly_seven_required" },
+        );
+        return;
+      }
+      const days = rawDays.map(normalizeProgramDay);
+      if (days.some((day) => !day)) {
+        validationError(
+          response,
+          "Each workout needs mapped exercises and valid set prescriptions; rest days cannot contain exercises.",
+          { days: "invalid_day_or_prescription" },
+        );
+        return;
+      }
+      if (!days.some((day) => day.type === "workout")) {
+        validationError(
+          response,
+          "A manual deload must contain at least one mapped workout.",
+          { workouts: "at_least_one_required" },
+        );
+        return;
+      }
+      if (!uuidPattern.test(request.params.templateId)) {
+        response.status(404).json({ error: "Program not found." });
+        return;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const template = await client.query(
+          `SELECT id FROM program_templates
+           WHERE user_id = $1 AND id = $2 FOR UPDATE`,
+          [request.auth.userId, request.params.templateId],
+        );
+        if (template.rows.length === 0) {
+          await client.query("ROLLBACK");
+          response.status(404).json({ error: "Program not found." });
+          return;
+        }
+        const activeRun = await client.query(
+          `SELECT id FROM program_runs
+           WHERE user_id = $1 AND template_id = $2 AND status = 'active'`,
+          [request.auth.userId, request.params.templateId],
+        );
+        if (activeRun.rows.length > 0) {
+          await client.query("ROLLBACK");
+          response
+            .status(409)
+            .json({ error: "The active program cannot add a deload week." });
+          return;
+        }
+        const existingWeeks = await client.query(
+          `SELECT count(*)::int AS count, max(week_number)::int AS last_week,
+                  count(*) FILTER (WHERE week_type = 'deload')::int AS deload_count
+           FROM program_weeks WHERE user_id = $1 AND template_id = $2`,
+          [request.auth.userId, request.params.templateId],
+        );
+        const summary = existingWeeks.rows[0];
+        if (summary.count === 0 || summary.deload_count !== 0) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "A draft program can have one appended deload week.",
+          });
+          return;
+        }
+        const missingIds = await missingExerciseIds(client, days);
+        if (missingIds.length > 0) {
+          await client.query("ROLLBACK");
+          validationError(
+            response,
+            "Map every deload exercise to the catalog.",
+            {
+              unresolvedMappings: missingIds,
+            },
+          );
+          return;
+        }
+        const weekNumber = summary.last_week + 1;
+        const week = await client.query(
+          `INSERT INTO program_weeks (user_id, template_id, week_number, week_type)
+           VALUES ($1, $2, $3, 'deload') RETURNING id`,
+          [request.auth.userId, request.params.templateId, weekNumber],
+        );
+        for (const [index, day] of days.entries()) {
+          await insertProgramDay(
+            client,
+            request.auth.userId,
+            week.rows[0].id,
+            index + 1,
+            day,
+          );
+        }
+        await client.query("COMMIT");
+        response.status(201).json({
+          id: week.rows[0].id,
+          weekNumber,
+          weekType: "deload",
+        });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  );
+
+  router.put(
+    "/programs/:templateId/days/:dayId",
+    requireSignIn,
+    async (request, response) => {
+      const day = normalizeProgramDay(request.body);
+      if (!day) {
+        validationError(
+          response,
+          "Provide a valid workout or rest day with complete exercise prescriptions.",
+          { day: "invalid_day_or_prescription" },
+        );
+        return;
+      }
+      if (
+        !uuidPattern.test(request.params.templateId) ||
+        !uuidPattern.test(request.params.dayId)
+      ) {
+        response.status(404).json({ error: "Program day not found." });
+        return;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const ownedDay = await client.query(
+          `SELECT days.id FROM program_templates AS templates
+           JOIN program_weeks AS weeks
+             ON weeks.user_id = templates.user_id AND weeks.template_id = templates.id
+           JOIN program_days AS days
+             ON days.user_id = weeks.user_id AND days.week_id = weeks.id
+           WHERE templates.user_id = $1 AND templates.id = $2 AND days.id = $3
+           FOR UPDATE OF templates, days`,
+          [
+            request.auth.userId,
+            request.params.templateId,
+            request.params.dayId,
+          ],
+        );
+        if (ownedDay.rows.length === 0) {
+          await client.query("ROLLBACK");
+          response.status(404).json({ error: "Program day not found." });
+          return;
+        }
+        const locked = await client.query(
+          `SELECT EXISTS (
+             SELECT 1 FROM program_run_days AS run_days
+             LEFT JOIN workout_sessions AS sessions
+               ON sessions.user_id = run_days.user_id
+              AND sessions.program_run_day_id = run_days.id
+              AND sessions.status <> 'discarded'
+             WHERE run_days.user_id = $1 AND run_days.template_day_id = $2
+               AND (run_days.status <> 'pending' OR sessions.id IS NOT NULL)
+           ) AS locked`,
+          [request.auth.userId, request.params.dayId],
+        );
+        if (locked.rows[0].locked) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "Only future program days without a session can be edited.",
+          });
+          return;
+        }
+        const missingIds = await missingExerciseIds(client, [day]);
+        if (missingIds.length > 0) {
+          await client.query("ROLLBACK");
+          validationError(response, "Map every exercise to the catalog.", {
+            unresolvedMappings: missingIds,
+          });
+          return;
+        }
+        await client.query(
+          `UPDATE program_days SET day_type = $1, name = $2
+           WHERE user_id = $3 AND id = $4`,
+          [day.type, day.name, request.auth.userId, request.params.dayId],
+        );
+        await client.query(
+          "DELETE FROM program_day_exercises WHERE user_id = $1 AND day_id = $2",
+          [request.auth.userId, request.params.dayId],
+        );
+        for (const [exerciseIndex, exercise] of day.exercises.entries()) {
+          const snapshot = {
+            notes: exercise.notes,
+            sets: exercise.sets.map((set) => ({
+              type: set.type,
+              repMin: set.repMin,
+              repMax: set.repMax,
+              targetRir: set.rir,
+            })),
+          };
+          const inserted = await client.query(
+            `INSERT INTO program_day_exercises
+               (user_id, day_id, exercise_id, sort_order, prescription_snapshot)
+             VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
+            [
+              request.auth.userId,
+              request.params.dayId,
+              exercise.exerciseId,
+              exerciseIndex + 1,
+              JSON.stringify(snapshot),
+            ],
+          );
+          for (const [setIndex, set] of exercise.sets.entries()) {
+            await client.query(
+              `INSERT INTO program_sets
+                 (user_id, day_exercise_id, set_number, set_type, rep_min, rep_max, target_rir)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [
+                request.auth.userId,
+                inserted.rows[0].id,
+                setIndex + 1,
+                set.type,
+                set.repMin,
+                set.repMax,
+                set.rir,
+              ],
+            );
+          }
+        }
+        await client.query("COMMIT");
+        const program = await getProgramDetail(
+          pool,
+          request.auth.userId,
+          request.params.templateId,
+        );
+        const savedDay = program.weeks
+          .flatMap((week) => week.days)
+          .find(({ id }) => id === request.params.dayId);
+        response.json(savedDay);
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  );
+
+  router.post(
+    "/programs/:templateId/activate",
+    requireSignIn,
+    async (request, response) => {
+      if (request.body?.confirmed !== true) {
+        validationError(
+          response,
+          "Explicit confirmation is required to activate a program.",
+        );
+        return;
+      }
+      if (!uuidPattern.test(request.params.templateId)) {
+        response.status(404).json({ error: "Program not found." });
+        return;
+      }
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT id FROM users WHERE id = $1 FOR UPDATE", [
+          request.auth.userId,
+        ]);
+        const template = await client.query(
+          `SELECT id FROM program_templates
+           WHERE user_id = $1 AND id = $2 FOR UPDATE`,
+          [request.auth.userId, request.params.templateId],
+        );
+        if (template.rows.length === 0) {
+          await client.query("ROLLBACK");
+          response.status(404).json({ error: "Program not found." });
+          return;
+        }
+        const errors = await activationErrors(
+          client,
+          request.auth.userId,
+          request.params.templateId,
+        );
+        if (Object.keys(errors).length > 0) {
+          await client.query("ROLLBACK");
+          validationError(
+            response,
+            "Resolve every workout, exercise mapping, and seven-slot week, including the appended deload, before activation.",
+            errors,
+          );
+          return;
+        }
+        const activeRun = await client.query(
+          "SELECT id FROM program_runs WHERE user_id = $1 AND status = 'active'",
+          [request.auth.userId],
+        );
+        if (activeRun.rows.length > 0) {
+          await client.query("ROLLBACK");
+          response
+            .status(409)
+            .json({ error: "Another program is already active." });
+          return;
+        }
+        const run = await client.query(
+          `INSERT INTO program_runs (user_id, template_id)
+           VALUES ($1, $2) RETURNING id`,
+          [request.auth.userId, request.params.templateId],
+        );
+        await client.query(
+          `INSERT INTO program_run_days
+             (user_id, run_id, template_day_id, week_number, slot_number, day_type)
+           SELECT days.user_id, $3, days.id, weeks.week_number,
+                  days.slot_number, days.day_type
+           FROM program_weeks AS weeks
+           JOIN program_days AS days
+             ON days.user_id = weeks.user_id AND days.week_id = weeks.id
+           WHERE weeks.user_id = $1 AND weeks.template_id = $2
+           ORDER BY weeks.week_number, days.slot_number`,
+          [request.auth.userId, request.params.templateId, run.rows[0].id],
+        );
+        await client.query("COMMIT");
+        response.status(201).json({
+          id: run.rows[0].id,
+          templateId: request.params.templateId,
+          status: "active",
+        });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        if (error.code === "23505") {
+          response
+            .status(409)
+            .json({ error: "Another program is already active." });
+          return;
+        }
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  );
 
   router.post(
     "/programs/import/preview",

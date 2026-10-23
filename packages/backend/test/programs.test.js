@@ -172,6 +172,42 @@ describe("WT-012 program import", () => {
     };
   }
 
+  async function createImportedProgram(cookie) {
+    const response = await request(app)
+      .post("/api/programs/import")
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send(importPayload());
+    expect(response.status).toBe(201);
+    return response.body.id;
+  }
+
+  function makeDeloadDays(slotCount = 7) {
+    return Array.from({ length: slotCount }, (_, index) =>
+      index === 0 || index === 3
+        ? {
+            type: "workout",
+            name: `Deload workout ${index + 1}`,
+            exercises: [
+              {
+                exerciseId: knownExerciseId,
+                notes: "Reduced volume",
+                sets: [
+                  {
+                    type: "standard",
+                    repMin: 8,
+                    repMax: 10,
+                    rir: 3,
+                  },
+                ],
+              },
+            ],
+          }
+        : { type: "rest", name: "Rest", exercises: [] },
+    );
+  }
+
   async function createExistingTemplate() {
     const id = randomUUID();
     await database.query(
@@ -463,5 +499,242 @@ describe("WT-012 program import", () => {
       days: 0,
       requests: 0,
     });
+  });
+
+  test("requires one appended seven-slot deload before activating a program", async () => {
+    const cookie = await signIn();
+    const templateId = await createImportedProgram(cookie);
+
+    const blocked = await request(app)
+      .post(`/api/programs/${templateId}/activate`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ confirmed: true });
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.errors).toMatchObject({ deload: "required" });
+
+    for (const slotCount of [6, 8]) {
+      const rejected = await request(app)
+        .post(`/api/programs/${templateId}/deload`)
+        .set("Origin", origin)
+        .set("Cookie", cookie)
+        .send({ days: makeDeloadDays(slotCount) });
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.errors).toMatchObject({
+        days: "exactly_seven_required",
+      });
+    }
+
+    const allRest = await request(app)
+      .post(`/api/programs/${templateId}/deload`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({
+        days: Array.from({ length: 7 }, () => ({
+          type: "rest",
+          name: "Rest",
+          exercises: [],
+        })),
+      });
+    expect(allRest.status).toBe(400);
+    expect(allRest.body.errors).toMatchObject({
+      workouts: "at_least_one_required",
+    });
+
+    const unmappedDays = makeDeloadDays();
+    unmappedDays[0].exercises[0].exerciseId = randomUUID();
+    const unmapped = await request(app)
+      .post(`/api/programs/${templateId}/deload`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ days: unmappedDays });
+    expect(unmapped.status).toBe(400);
+    expect(unmapped.body.errors.unresolvedMappings).toHaveLength(1);
+
+    const configured = await request(app)
+      .post(`/api/programs/${templateId}/deload`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ days: makeDeloadDays() });
+    expect(configured.status).toBe(201);
+    expect(configured.body).toMatchObject({
+      weekNumber: 2,
+      weekType: "deload",
+    });
+    const savedDeloadSet = await database.query(
+      `SELECT sets.set_type, sets.rep_min, sets.rep_max, sets.target_rir
+       FROM program_weeks AS weeks
+       JOIN program_days AS days
+         ON days.user_id = weeks.user_id AND days.week_id = weeks.id
+       JOIN program_day_exercises AS exercises
+         ON exercises.user_id = days.user_id AND exercises.day_id = days.id
+       JOIN program_sets AS sets
+         ON sets.user_id = exercises.user_id AND sets.day_exercise_id = exercises.id
+       WHERE weeks.id = $1 AND days.slot_number = 1
+       ORDER BY sets.set_number`,
+      [configured.body.id],
+    );
+    expect(savedDeloadSet.rows).toEqual([
+      { set_type: "standard", rep_min: 8, rep_max: 10, target_rir: 3 },
+    ]);
+
+    const activated = await request(app)
+      .post(`/api/programs/${templateId}/activate`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ confirmed: true });
+    expect(activated.status).toBe(201);
+    expect(activated.body).toMatchObject({
+      templateId,
+      status: "active",
+    });
+    const runDays = await database.query(
+      `SELECT weeks.week_number, weeks.week_type, count(days.id)::int AS slots
+       FROM program_run_days AS run_days
+       JOIN program_days AS days
+         ON days.user_id = run_days.user_id AND days.id = run_days.template_day_id
+       JOIN program_weeks AS weeks
+         ON weeks.user_id = days.user_id AND weeks.id = days.week_id
+       WHERE run_days.run_id = $1
+       GROUP BY weeks.week_number, weeks.week_type
+       ORDER BY weeks.week_number`,
+      [activated.body.id],
+    );
+    expect(runDays.rows).toEqual([
+      { week_number: 1, week_type: "training", slots: 7 },
+      { week_number: 2, week_type: "deload", slots: 7 },
+    ]);
+  });
+
+  test("edits unresolved future days without changing resolved or in-session days", async () => {
+    const cookie = await signIn();
+    const templateId = await createImportedProgram(cookie);
+    const deload = await request(app)
+      .post(`/api/programs/${templateId}/deload`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ days: makeDeloadDays() });
+    expect(deload.status).toBe(201);
+
+    const detail = await request(app)
+      .get(`/api/programs/${templateId}`)
+      .set("Cookie", cookie);
+    expect(detail.status).toBe(200);
+    const trainingDay = detail.body.weeks[0].days[0];
+    const futureEdit = {
+      type: "workout",
+      name: trainingDay.name,
+      exercises: [
+        {
+          exerciseId: knownExerciseId,
+          notes: "Updated future prescription",
+          sets: [
+            { type: "standard", repMin: 6, repMax: 8, rir: 2 },
+            { type: "warmup", repMin: 3, repMax: 3, rir: 4 },
+          ],
+        },
+      ],
+    };
+    const changedDay = await request(app)
+      .put(`/api/programs/${templateId}/days/${trainingDay.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send(futureEdit);
+    expect(changedDay.status).toBe(200);
+    expect(changedDay.body.exercises[0].sets).toMatchObject([
+      { type: "standard", repMin: 6, repMax: 8, rir: 2 },
+      { type: "warmup", repMin: 3, repMax: 3, rir: 4 },
+    ]);
+
+    const activated = await request(app)
+      .post(`/api/programs/${templateId}/activate`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ confirmed: true });
+    expect(activated.status).toBe(201);
+    await database.query(
+      `UPDATE program_run_days SET status = 'completed', resolved_at = now()
+       WHERE run_id = $1 AND week_number = 1 AND slot_number = 1`,
+      [activated.body.id],
+    );
+
+    const resolvedEdit = await request(app)
+      .put(`/api/programs/${templateId}/days/${trainingDay.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send(futureEdit);
+    expect(resolvedEdit.status).toBe(409);
+    expect(resolvedEdit.body.error).toMatch(/future program days/i);
+
+    const inProgressDay = await database.query(
+      "SELECT id FROM program_run_days WHERE run_id = $1 AND slot_number = 4",
+      [activated.body.id],
+    );
+    const sessionId = randomUUID();
+    const sessionExerciseId = randomUUID();
+    await database.query(
+      `INSERT INTO workout_sessions
+         (id, user_id, program_run_id, program_run_day_id, started_local_date)
+       VALUES ($1, $2, $3, $4, '2026-10-22')`,
+      [sessionId, member.id, activated.body.id, inProgressDay.rows[0].id],
+    );
+    await database.query(
+      `INSERT INTO session_exercises
+         (id, user_id, session_id, exercise_id, name_snapshot, prescription_snapshot)
+       VALUES ($1, $2, $3, $4, 'Known lift', $5::jsonb)`,
+      [
+        sessionExerciseId,
+        member.id,
+        sessionId,
+        knownExerciseId,
+        JSON.stringify({ sets: [{ repMin: 5, repMax: 8, rir: 2 }] }),
+      ],
+    );
+    const inProgressEdit = await request(app)
+      .put(
+        `/api/programs/${templateId}/days/${detail.body.weeks[0].days[3].id}`,
+      )
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send(futureEdit);
+    expect(inProgressEdit.status).toBe(409);
+    const snapshot = await database.query(
+      "SELECT prescription_snapshot FROM session_exercises WHERE id = $1",
+      [sessionExerciseId],
+    );
+    expect(snapshot.rows[0].prescription_snapshot).toEqual({
+      sets: [{ repMin: 5, repMax: 8, rir: 2 }],
+    });
+  });
+
+  test("blocks activation when a week has no workouts", async () => {
+    const cookie = await signIn();
+    const templateId = await createImportedProgram(cookie);
+    const deload = await request(app)
+      .post(`/api/programs/${templateId}/deload`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ days: makeDeloadDays() });
+    expect(deload.status).toBe(201);
+    await database.query(
+      `UPDATE program_days SET day_type = 'rest', name = 'Rest'
+       WHERE week_id IN (SELECT id FROM program_weeks WHERE template_id = $1)`,
+      [templateId],
+    );
+
+    const activated = await request(app)
+      .post(`/api/programs/${templateId}/activate`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .send({ confirmed: true });
+    expect(activated.status).toBe(400);
+    expect(activated.body.errors).toMatchObject({
+      workouts: "at_least_one_required",
+    });
+    const runs = await database.query(
+      "SELECT id FROM program_runs WHERE user_id = $1",
+      [member.id],
+    );
+    expect(runs.rows).toEqual([]);
   });
 });

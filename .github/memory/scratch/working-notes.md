@@ -2,11 +2,21 @@
 
 Use this file for the current, unfinished task. It is ignored by Git and is not committed. At the end of the session, distill durable findings into `../session-notes.md` and reusable patterns into `../patterns-discovered.md`.
 
-- WT-012: CSV import preview, mapping, and confirmed draft creation.
+- WT-013: future-program editing, manual deload setup, and activation prerequisites.
 
 ## Current Task
 
+- Implementation and automated verification complete; browser walkthrough remains pending.
+
 ## Approach
+
+- Added authenticated API regressions first; expected route 404s confirmed the missing behavior. Used isolated PGlite for persistence and component tests for the edit/deload/activation journey.
+- Reused existing `program_runs`/`program_run_days`; no migration was required. Locked edits for resolved days and nondiscarded session-backed days.
+- Added a seven-slot manual deload builder with catalog mappings and exact type/rep/RIR prescriptions. Activation is transactional and requires an appended deload, valid weeks, mapped nonempty workouts, and explicit confirmation.
+- The builder now copies seven day slots and exercise identities/notes from the latest training week, without copying sets; users add deload-specific prescriptions before saving.
+- Verification: full Jest 20 suites / 96 tests; lint, format, CSS Prettier, build, and editor diagnostics passed. Browser walkthrough and external PostgreSQL remain unrun.
+
+## WT-012 Context
 
 - WT-009: profile and gym settings.
 - Added Supertest/PGlite regressions before the import routes; the first run returned 404 for preview/create. Added a mobile Programs view and component tests after the API was green.

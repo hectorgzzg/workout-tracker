@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/vue";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/vue";
 import { afterEach, beforeEach, jest } from "@jest/globals";
 import programsViewModule from "./ProgramsView.vue";
 
@@ -68,6 +74,55 @@ function preview(overrides = {}) {
     catalogExercises: [
       { id: "exercise-1", name: "Known lift" },
       { id: "exercise-2", name: "Alternate lift" },
+    ],
+    ...overrides,
+  };
+}
+
+function savedProgram(overrides = {}) {
+  return {
+    id: "program-1",
+    name: "Strength plan",
+    status: "draft",
+    weeks: [
+      {
+        id: "week-1",
+        weekNumber: 1,
+        type: "training",
+        days: [
+          {
+            id: "day-1",
+            slotNumber: 1,
+            type: "workout",
+            name: "Workout A",
+            exercises: [
+              {
+                id: "program-exercise-1",
+                exerciseId: "exercise-1",
+                name: "Known lift",
+                notes: "",
+                sets: [
+                  {
+                    id: "set-1",
+                    setNumber: 1,
+                    type: "standard",
+                    repMin: 5,
+                    repMax: 8,
+                    rir: 2,
+                  },
+                ],
+              },
+            ],
+          },
+          ...Array.from({ length: 6 }, (_, index) => ({
+            id: `day-${index + 2}`,
+            slotNumber: index + 2,
+            type: "rest",
+            name: "Rest",
+            exercises: [],
+          })),
+        ],
+      },
     ],
     ...overrides,
   };
@@ -209,4 +264,150 @@ test("blocks unsafe preview structure and recovers after editing and re-previewi
   expect(
     screen.queryByText("Cycle 1 has 6 slots; exactly seven are required."),
   ).not.toBeInTheDocument();
+});
+
+test("edits a future prescription, configures seven deload slots, and activates explicitly", async () => {
+  let deloadConfigured = false;
+  let configuredDays = [];
+  const program = savedProgram();
+  globalThis.fetch = jest.fn(async (url, options = {}) => {
+    if (url.endsWith("/api/programs")) {
+      return jsonResponse([
+        {
+          id: "program-1",
+          name: "Strength plan",
+          weekCount: 1,
+          status: "draft",
+        },
+      ]);
+    }
+    if (url.endsWith("/api/catalog/exercises")) {
+      return jsonResponse([{ id: "exercise-1", name: "Known lift" }]);
+    }
+    if (url.endsWith("/api/programs/program-1/days/day-1")) {
+      return jsonResponse({
+        ...program.weeks[0].days[0],
+        ...JSON.parse(options.body),
+      });
+    }
+    if (url.endsWith("/api/programs/program-1/deload")) {
+      deloadConfigured = true;
+      configuredDays = JSON.parse(options.body).days;
+      return jsonResponse(
+        { id: "week-2", weekNumber: 2, weekType: "deload" },
+        201,
+      );
+    }
+    if (url.endsWith("/api/programs/program-1/activate")) {
+      return jsonResponse(
+        { id: "run-1", templateId: "program-1", status: "active" },
+        201,
+      );
+    }
+    if (url.endsWith("/api/programs/program-1")) {
+      return jsonResponse(
+        deloadConfigured
+          ? savedProgram({
+              weeks: [
+                ...program.weeks,
+                {
+                  id: "week-2",
+                  weekNumber: 2,
+                  type: "deload",
+                  days: configuredDays.map((day, index) => ({
+                    id: `deload-day-${index + 1}`,
+                    slotNumber: index + 1,
+                    ...day,
+                    exercises: day.exercises.map((exercise, exerciseIndex) => ({
+                      id: `deload-exercise-${index + 1}-${exerciseIndex + 1}`,
+                      name: "Known lift",
+                      ...exercise,
+                      sets: exercise.sets.map((set, setIndex) => ({
+                        id: `deload-set-${index + 1}-${setIndex + 1}`,
+                        ...set,
+                      })),
+                    })),
+                  })),
+                },
+              ],
+            })
+          : program,
+      );
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  render(ProgramsView);
+  await screen.findByRole("button", { name: "Open Strength plan" });
+  await fireEvent.click(
+    screen.getByRole("button", { name: "Open Strength plan" }),
+  );
+  await screen.findByRole("heading", { name: "Strength plan" });
+  expect(screen.getByLabelText("Deload day 1 exercise 1")).toHaveValue(
+    "exercise-1",
+  );
+  expect(screen.getByLabelText("Deload day 1 type")).toHaveValue("workout");
+  expect(screen.getByLabelText("Deload day 2 type")).toHaveValue("rest");
+  expect(
+    screen.queryByLabelText("Deload day 1 set 1 type"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Configure manual deload" }),
+  ).toBeDisabled();
+  await fireEvent.click(screen.getByRole("button", { name: "Edit Day 1" }));
+  await fireEvent.update(screen.getByLabelText("Rep minimum, set 1"), "6");
+  await fireEvent.click(screen.getByRole("button", { name: "Save day" }));
+  await waitFor(() =>
+    expect(
+      globalThis.fetch.mock.calls.some(([url]) =>
+        url.endsWith("/api/programs/program-1/days/day-1"),
+      ),
+    ).toBe(true),
+  );
+
+  await fireEvent.click(
+    within(screen.getByRole("region", { name: "Manual deload" })).getByRole(
+      "button",
+      { name: "Add set" },
+    ),
+  );
+  await fireEvent.update(
+    screen.getByLabelText("Deload day 1 target RIR, set 1"),
+    "3",
+  );
+  await fireEvent.click(
+    screen.getByRole("button", { name: "Configure manual deload" }),
+  );
+  await waitFor(() => expect(deloadConfigured).toBe(true));
+  await screen.findByRole("heading", { name: "Week 2" });
+  const deloadCall = globalThis.fetch.mock.calls.find(([url]) =>
+    url.endsWith("/api/programs/program-1/deload"),
+  );
+  expect(JSON.parse(deloadCall[1].body).days).toHaveLength(7);
+  expect(JSON.parse(deloadCall[1].body).days[0]).toMatchObject({
+    type: "workout",
+    exercises: [
+      {
+        exerciseId: "exercise-1",
+        sets: [{ type: "standard", repMin: 8, repMax: 10, rir: 3 }],
+      },
+    ],
+  });
+
+  const activationConfirmation = screen.getByLabelText(
+    "I confirm this program and its appended deload are ready to activate.",
+  );
+  const activateButton = screen.getByRole("button", {
+    name: "Activate program",
+  });
+  expect(activationConfirmation).toBeEnabled();
+  expect(activateButton).toBeDisabled();
+  await fireEvent.click(activationConfirmation);
+  await waitFor(() => expect(activateButton).toBeEnabled());
+  await fireEvent.click(activateButton);
+  await screen.findByText("Strength plan is active.");
+  const activationCall = globalThis.fetch.mock.calls.find(([url]) =>
+    url.endsWith("/api/programs/program-1/activate"),
+  );
+  expect(JSON.parse(activationCall[1].body)).toEqual({ confirmed: true });
 });

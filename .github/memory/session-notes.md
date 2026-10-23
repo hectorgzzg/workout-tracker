@@ -351,3 +351,27 @@ Document completed development sessions here so future work can benefit from the
 - `packages/backend/test/programs.test.js` passed 7 tests; `packages/frontend/src/views/ProgramsView.test.js` passed 2 tests. Full Jest passed 20 suites / 92 tests.
 - Lint, format check, production build, editor diagnostics, and `git diff --check` passed. Integrated Chromium browser validation at 375x844 CSS pixels exercised draft creation and six-to-seven-slot error recovery with no horizontal overflow.
 - External PostgreSQL and physical mobile devices were not tested. The development browser services use ephemeral data.
+
+### Session: WT-013 future-program editing and manual deload
+
+**Date:** 2026-10-22
+
+#### What was accomplished
+
+- Added program detail, future-day prescription editing, manual seven-slot deload setup, and explicit activation into existing program-run tables.
+- Added readiness validation for appended deload ordering, seven slots per week, mapped exercises, nonempty workout days/sets, and at least one workout per week.
+- Added Programs view controls for day/exercise/set editing, catalog-backed deload prescriptions, and confirmation-gated activation.
+- Prefilled the manual deload from the latest training week’s slots and exercises while intentionally omitting sets, so users only need to enter deload prescriptions.
+- Recorded WT-013 API/component evidence in the implementation backlog.
+
+#### Key findings and decisions
+
+- Existing template, run, and run-day schema supported this lifecycle slice without a migration. Activation writes run-day identities separately while retaining reusable template days.
+- Future template edits replace only the selected template day’s exercise/set rows in a transaction. Resolved run days and days with nondiscarded sessions are locked; finished/in-progress session prescription snapshots remain separate.
+- One appended deload is required before activation; training week count remains variable. Both six- and eight-slot deload payloads are rejected.
+
+#### Outcomes
+
+- Backend WT-013 tests passed 10 scenarios; Programs component tests passed 3, including the full edit/deload/confirmation/activation path. Full Jest passed 20 suites / 96 tests.
+- `npm run lint`, `npm run format:check`, direct stylesheet formatting check, production build, and editor diagnostics passed.
+- Browser walkthrough, external PostgreSQL, and physical-device checks were not run; browser acceptance remains pending.

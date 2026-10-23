@@ -879,12 +879,18 @@ h2 {
 .saved-program-list li {
   display: flex;
   min-width: 0;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 14px 0;
   border-bottom: 1px solid var(--line);
   font-size: 0.85rem;
+}
+
+.saved-program-meta {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
 }
 
 .saved-program-list strong {
@@ -893,9 +899,113 @@ h2 {
 }
 
 .saved-program-list span {
-  flex: 0 0 auto;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.program-detail {
+  min-width: 0;
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.program-detail-heading,
+.program-day-heading,
+.program-editor-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.program-detail-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.program-detail-heading h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  font-size: 1.1rem;
+}
+
+.program-detail-heading span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.program-day-heading h4 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.program-day-editor {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.program-exercise-editor,
+.program-set-editor {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.program-exercise-editor > legend,
+.program-set-editor > legend {
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.program-exercise-editor .program-field,
+.program-set-editor .program-field {
+  margin-top: 4px;
+}
+
+.program-set-editor {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.program-set-editor > legend,
+.program-set-editor > .text-button {
+  grid-column: 1 / -1;
+}
+
+.program-editor-actions {
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+
+.program-editor-actions .button {
+  min-width: 120px;
+}
+
+.manual-deload,
+.program-activation {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.manual-deload > .button,
+.program-activation > .button {
+  width: min(100%, 320px);
+  margin-top: 16px;
+}
+
+.program-activation .program-confirm {
+  max-width: 620px;
 }
 
 @keyframes arrive {
@@ -966,6 +1076,10 @@ h2 {
     grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr);
     align-items: start;
     gap: 42px;
+  }
+
+  .programs-layout:has(.program-detail) {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .settings-row {
