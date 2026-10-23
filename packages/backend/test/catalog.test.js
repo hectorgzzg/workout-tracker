@@ -158,7 +158,7 @@ describe("WT-008 shared exercise catalog", () => {
     expect(duplicate.status).toBe(409);
   });
 
-  test("matches only the exact catalog name and keeps identity stable on edits", async () => {
+  test("matches exact names and preserves linked snapshots on catalog edits", async () => {
     const adminCookie = await signIn(admin);
     const created = await request(app)
       .post("/api/admin/catalog/exercises")
@@ -166,6 +166,79 @@ describe("WT-008 shared exercise catalog", () => {
       .set("Cookie", adminCookie)
       .send(catalogEntry());
     const memberCookie = await signIn(member);
+    const templateId = randomUUID();
+    const weekId = randomUUID();
+    const dayId = randomUUID();
+    const programExerciseId = randomUUID();
+    const sessionId = randomUUID();
+    const sessionExerciseId = randomUUID();
+    const programSnapshot = {
+      sets: [{ type: "standard", repMin: 5, repMax: 8, targetRir: 2 }],
+    };
+    const exerciseSnapshot = {
+      name: "Barbell squat",
+      equipment: "barbell",
+      loadType: "external",
+    };
+    const sessionPrescriptionSnapshot = {
+      sets: [{ type: "standard", repMin: 5, repMax: 8, targetRir: 2 }],
+    };
+
+    expect(created.status).toBe(201);
+    await database.query(
+      "INSERT INTO program_templates (id, user_id, name) VALUES ($1, $2, 'Snapshot test')",
+      [templateId, member.id],
+    );
+    await database.query(
+      `INSERT INTO program_weeks (id, user_id, template_id, week_number, week_type)
+       VALUES ($1, $2, $3, 1, 'training')`,
+      [weekId, member.id, templateId],
+    );
+    await database.query(
+      `INSERT INTO program_days (id, user_id, week_id, slot_number, day_type)
+       VALUES ($1, $2, $3, 1, 'workout')`,
+      [dayId, member.id, weekId],
+    );
+    await database.query(
+      `INSERT INTO program_day_exercises
+         (id, user_id, day_id, exercise_id, sort_order, prescription_snapshot)
+       VALUES ($1, $2, $3, $4, 1, $5)`,
+      [programExerciseId, member.id, dayId, created.body.id, programSnapshot],
+    );
+    await database.query(
+      `INSERT INTO workout_sessions (id, user_id, started_local_date)
+       VALUES ($1, $2, '2026-10-20')`,
+      [sessionId, member.id],
+    );
+    await database.query(
+      `INSERT INTO session_exercises
+         (id, user_id, session_id, exercise_id, name_snapshot,
+          exercise_snapshot, prescription_snapshot)
+       VALUES ($1, $2, $3, $4, 'Barbell squat', $5, $6)`,
+      [
+        sessionExerciseId,
+        member.id,
+        sessionId,
+        created.body.id,
+        exerciseSnapshot,
+        sessionPrescriptionSnapshot,
+      ],
+    );
+
+    async function readSnapshots() {
+      const program = await database.query(
+        "SELECT prescription_snapshot FROM program_day_exercises WHERE id = $1",
+        [programExerciseId],
+      );
+      const session = await database.query(
+        `SELECT name_snapshot, exercise_snapshot, prescription_snapshot
+         FROM session_exercises WHERE id = $1`,
+        [sessionExerciseId],
+      );
+      return { program: program.rows, session: session.rows };
+    }
+
+    const snapshotsBefore = await readSnapshots();
 
     const exact = await request(app)
       .get("/api/catalog/exercises/match")
@@ -193,5 +266,6 @@ describe("WT-008 shared exercise catalog", () => {
     expect(rows).toEqual([
       { id: created.body.id, name: "High-bar barbell squat" },
     ]);
+    expect(await readSnapshots()).toEqual(snapshotsBefore);
   });
 });
