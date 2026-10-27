@@ -446,3 +446,41 @@ Document completed development sessions here so future work can benefit from the
 
 - Focused regressions confirmed and fixed missing idempotency CORS, absent tracker route wiring, same-date start/finalization eligibility, and repeated-exercise snapshot collisions.
 - Full Jest passed 22 suites / 129 tests. Lint, format check, production build, and `git diff --check` passed. Tests used PGlite; external PostgreSQL, Playwright/browser, and physical-device checks were not run.
+
+### Session: WT-017 manual workout tracking
+
+**Date:** 2026-10-26
+
+#### What was accomplished
+
+- Extended the existing tracker with exercise image navigation, exercise/set position, Info/History actions, a horizontally scrollable set grid, read-only Auto fields, and set-type selection.
+- Added explicit checked state and set-type persistence, row lock/unlock behavior, effective per-exercise unit loading, precise unit conversion, and persisted exercise skipping.
+- Added migration `008_session_exercise_skips.sql` and focused Vue Testing Library/Supertest coverage.
+
+#### Key findings and decisions
+
+- Keep checked rows locked until an explicit uncheck; the input handler also ignores unexpected updates to checked rows.
+- Fetch current effective exercise units rather than assuming the workout snapshot still matches the profile default. Convert display loads to/from canonical kg without frontend decimal rounding.
+- Display `Manual` for Auto load until WT-019 provides a valid recommendation; do not fabricate a load when configuration is absent.
+- Persist skipped exercise status now; WT-023 still owns finalization and enforcement that skipped workouts cannot use normal completion. Recommendation invalidation integrates with WT-019.
+
+#### Outcomes
+
+- The new backend API regression initially returned 400 because explicit check/type fields were not accepted; it passed after the save contract was extended. The effective-unit component regression initially displayed the snapshot's kg value instead of the current lb preference; it passed after loading preferences and preserving canonical load precision.
+- Full Jest passed 23 suites / 137 tests. Post-format tracker tests passed 2 suites / 8 tests; the backend programs suite passed 31 tests. Lint, format check, production build, and `git diff --check` passed.
+- Tests used isolated PGlite. No browser server, Playwright, physical-device, or external PostgreSQL validation was run.
+
+### Session: Workout navigation and visibility polish
+
+**Date:** 2026-10-26
+
+#### What was accomplished
+
+- Added Info and History back links that use the previous in-app route, with Home as the direct-entry fallback.
+- Marked tracker exercise selectors with a light-green background once all checked working sets are complete; warmups are excluded.
+- Expanded the Home current-program days by default while retaining the collapse control.
+
+#### Outcomes
+
+- Full frontend Jest passed 9 suites / 41 tests. Lint, format check, production build, editor diagnostics, and `git diff --check` passed.
+- Existing development servers on ports 5173 and 3000 were left running. No Playwright or physical-device checks were run.

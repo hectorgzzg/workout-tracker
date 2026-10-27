@@ -5,6 +5,11 @@ export default {
       state: { loading: true, error: "", exercise: null },
     };
   },
+  computed: {
+    backPath() {
+      return this.$router.options.history.state.back || "/";
+    },
+  },
   mounted() {
     this.loadExercise();
   },
@@ -46,6 +51,9 @@ export default {
 
 <template>
   <section class="page-content exercise-info-page">
+    <RouterLink class="text-button page-back-button" :to="backPath">
+      Go back
+    </RouterLink>
     <p v-if="state.loading" class="home-loading" role="status">
       Loading exercise information…
     </p>

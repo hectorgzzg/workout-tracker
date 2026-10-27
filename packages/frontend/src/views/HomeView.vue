@@ -17,7 +17,7 @@ export default {
         loading: true,
         error: "",
         monthView: false,
-        ribbonExpanded: false,
+        ribbonExpanded: true,
         calendarDate: mondayFor(new Date()),
       },
     };

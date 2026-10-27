@@ -185,7 +185,7 @@ afterEach(() => {
   globalThis.__WORKOUT_TRACKER_API_ORIGIN__ = originalApiOrigin;
 });
 
-test("shows the collapsed week and expands the active program's seven distinct slots", async () => {
+test("shows the active program's seven distinct slots expanded by default", async () => {
   renderHome();
 
   expect(screen.getByRole("status")).toHaveTextContent(
@@ -200,14 +200,10 @@ test("shows the collapsed week and expands the active program's seven distinct s
   expect(
     screen.getByRole("button", { name: "Show month" }),
   ).toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "Expand current program" }),
-  ).toBeInTheDocument();
-  await fireEvent.click(
-    screen.getByRole("button", { name: "Expand current program" }),
-  );
-
   const ribbon = screen.getByRole("region", { name: "Current program days" });
+  expect(
+    screen.getByRole("button", { name: "Collapse current program" }),
+  ).toHaveAttribute("aria-expanded", "true");
   expect(within(ribbon).getAllByRole("listitem")).toHaveLength(7);
   expect(within(ribbon).getAllByRole("link")).toHaveLength(5);
   expect(within(ribbon).getByText("Partial")).toBeInTheDocument();
@@ -221,6 +217,18 @@ test("shows the collapsed week and expands the active program's seven distinct s
     "https://api.example.test/api/program-runs/current",
     expect.objectContaining({ credentials: "include" }),
   );
+  await fireEvent.click(
+    screen.getByRole("button", { name: "Collapse current program" }),
+  );
+  expect(
+    screen.queryByRole("region", { name: "Current program days" }),
+  ).not.toBeInTheDocument();
+  await fireEvent.click(
+    screen.getByRole("button", { name: "Expand current program" }),
+  );
+  expect(
+    screen.getByRole("region", { name: "Current program days" }),
+  ).toBeInTheDocument();
 });
 
 test("switches the calendar between a week and a month", async () => {

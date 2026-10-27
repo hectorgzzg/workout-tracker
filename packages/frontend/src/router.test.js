@@ -18,6 +18,7 @@ const WorkoutDetailView =
   workoutDetailViewModule.default ?? workoutDetailViewModule;
 const originalFetch = globalThis.fetch;
 const originalApiOrigin = globalThis.__WORKOUT_TRACKER_API_ORIGIN__;
+const routerBack = jest.fn();
 const RouterLinkStub = {
   props: ["to"],
   setup(props, { slots }) {
@@ -123,7 +124,14 @@ function renderRoute(path) {
     : { exerciseId: path.split("/").at(-2) };
   render(view, {
     global: {
-      mocks: { $route: { params } },
+      mocks: {
+        $route: { params },
+        $router: {
+          back: routerBack,
+          replace: jest.fn(),
+          options: { history: { state: { back: "/workouts/day-1" } } },
+        },
+      },
       stubs: { RouterLink: RouterLinkStub },
     },
   });
@@ -132,6 +140,7 @@ function renderRoute(path) {
 afterEach(() => {
   globalThis.fetch = originalFetch;
   globalThis.__WORKOUT_TRACKER_API_ORIGIN__ = originalApiOrigin;
+  routerBack.mockReset();
 });
 
 test.each([
@@ -338,6 +347,10 @@ test("renders exercise image and all three catalog muscle roles", async () => {
     screen.getByRole("img", { name: "Barbell squat setup" }),
   ).toHaveAttribute("src", "https://example.test/squat.jpg");
   expect(screen.getByText("Primary", { exact: true })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Go back" })).toHaveAttribute(
+    "href",
+    "#/workouts/day-1",
+  );
   expect(screen.getByText("Quadriceps", { exact: true })).toBeInTheDocument();
   expect(screen.getByText("Secondary", { exact: true })).toBeInTheDocument();
   expect(
@@ -345,6 +358,56 @@ test("renders exercise image and all three catalog muscle roles", async () => {
   ).toBeInTheDocument();
   expect(screen.getByText("Tertiary", { exact: true })).toBeInTheDocument();
   expect(screen.getByText("Adductors", { exact: true })).toBeInTheDocument();
+});
+
+test("shows a back action on the workout history page", async () => {
+  render(FeatureView, {
+    global: {
+      mocks: {
+        $route: {
+          name: "history",
+          meta: {
+            pageTitle: "Workout history",
+            emptyTitle: "No completed workouts yet.",
+            pageMessage: "Completed sessions will appear here.",
+          },
+        },
+        $router: {
+          options: { history: { state: { back: "/tracker/session-1" } } },
+        },
+      },
+      stubs: { RouterLink: RouterLinkStub },
+    },
+  });
+
+  expect(screen.getByRole("link", { name: "Go back" })).toHaveAttribute(
+    "href",
+    "#/tracker/session-1",
+  );
+});
+
+test("falls back to Home for History opened without an in-app back route", () => {
+  render(FeatureView, {
+    global: {
+      mocks: {
+        $route: {
+          name: "history",
+          meta: {
+            pageTitle: "Workout history",
+            emptyTitle: "No completed workouts yet.",
+            pageMessage: "Completed sessions will appear here.",
+          },
+        },
+        $router: { options: { history: { state: { back: null } } } },
+      },
+      stubs: { RouterLink: RouterLinkStub },
+    },
+  });
+
+  expect(screen.getByRole("link", { name: "Go back" })).toHaveAttribute(
+    "href",
+    "#/",
+  );
 });
 
 test("reports exercise catalog failures and handles an unknown exercise", async () => {

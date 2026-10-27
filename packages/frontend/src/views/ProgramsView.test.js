@@ -411,3 +411,61 @@ test("edits a future prescription, configures seven deload slots, and activates 
   );
   expect(JSON.parse(activationCall[1].body)).toEqual({ confirmed: true });
 });
+
+test("keeps saved program weeks collapsed until opened, including the deload week", async () => {
+  const program = savedProgram({
+    weeks: [
+      ...savedProgram().weeks,
+      {
+        id: "week-2",
+        weekNumber: 2,
+        type: "training",
+        days: savedProgram().weeks[0].days,
+      },
+      {
+        id: "week-3",
+        weekNumber: 3,
+        type: "deload",
+        days: savedProgram().weeks[0].days,
+      },
+    ],
+  });
+  globalThis.fetch = jest.fn(async (url) => {
+    if (url.endsWith("/api/programs")) {
+      return jsonResponse([
+        {
+          id: "program-1",
+          name: "Strength plan",
+          weekCount: 3,
+          status: "draft",
+        },
+      ]);
+    }
+    if (url.endsWith("/api/programs/program-1")) return jsonResponse(program);
+    if (url.endsWith("/api/catalog/exercises")) {
+      return jsonResponse([{ id: "exercise-1", name: "Known lift" }]);
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  render(ProgramsView);
+  await fireEvent.click(
+    await screen.findByRole("button", { name: "Open Strength plan" }),
+  );
+  await screen.findByRole("heading", { name: "Strength plan" });
+
+  const deloadSummary = screen.getByText("Week 3").closest("summary");
+  const deloadDetails = deloadSummary.closest("details");
+  expect(deloadSummary).toHaveTextContent("Manual deload");
+  expect(deloadDetails).not.toHaveAttribute("open");
+  expect(screen.getAllByText("Day 1 · Workout A")).toHaveLength(3);
+  await fireEvent.click(deloadSummary);
+
+  expect(deloadDetails).toHaveAttribute("open");
+  expect(
+    screen.getAllByText("Week 1")[0].closest("details"),
+  ).not.toHaveAttribute("open");
+  expect(
+    screen.getAllByText("Week 2")[0].closest("details"),
+  ).not.toHaveAttribute("open");
+});

@@ -653,7 +653,7 @@ async function getWorkoutSession(pool, userId, sessionId) {
   if (sessionResult.rows.length === 0) return null;
   const exerciseResult = await pool.query(
     `SELECT id, exercise_id, name_snapshot, exercise_snapshot,
-            prescription_snapshot, bodyweight_kg, bodyweight_factor,
+            prescription_snapshot, skipped, bodyweight_kg, bodyweight_factor,
             assistance_ratio
      FROM session_exercises
     WHERE user_id = $1 AND session_id = $2
@@ -666,6 +666,7 @@ async function getWorkoutSession(pool, userId, sessionId) {
     name: exercise.name_snapshot,
     snapshot: exercise.exercise_snapshot,
     prescription: exercise.prescription_snapshot,
+    skipped: exercise.skipped,
     bodyweightKg: exercise.bodyweight_kg,
     bodyweightFactor: exercise.bodyweight_factor,
     assistanceRatio: exercise.assistance_ratio,
@@ -1125,7 +1126,7 @@ export function createProgramsRouter({ pool }) {
     requireSignIn,
     async (request, response) => {
       const { sessionId } = request.params;
-      const { version, sets } = request.body ?? {};
+      const { version, sets, exerciseStates } = request.body ?? {};
       const idempotencyKey = request.get("Idempotency-Key");
       if (
         !uuidPattern.test(sessionId) ||
@@ -1134,9 +1135,11 @@ export function createProgramsRouter({ pool }) {
         !Array.isArray(sets) ||
         sets.length < 1 ||
         sets.length > 500 ||
+        (exerciseStates !== undefined &&
+          (!Array.isArray(exerciseStates) || exerciseStates.length > 200)) ||
         !idempotencyKeyPattern.test(idempotencyKey ?? "") ||
         Object.keys(request.body ?? {}).some(
-          (key) => !["version", "sets"].includes(key),
+          (key) => !["version", "sets", "exerciseStates"].includes(key),
         )
       ) {
         validationError(
@@ -1145,23 +1148,48 @@ export function createProgramsRouter({ pool }) {
         );
         return;
       }
+      const normalizedExerciseStates = Array.isArray(exerciseStates)
+        ? [...exerciseStates].sort((left, right) =>
+            String(left?.id).localeCompare(String(right?.id)),
+          )
+        : [];
       const normalizedSets = [...sets].sort((left, right) =>
         String(left?.id).localeCompare(String(right?.id)),
       );
       if (
+        normalizedExerciseStates.some(
+          (exercise) =>
+            !isRecord(exercise) ||
+            !uuidPattern.test(exercise.id ?? "") ||
+            Object.keys(exercise).some(
+              (key) => !["id", "skipped"].includes(key),
+            ) ||
+            typeof exercise.skipped !== "boolean",
+        ) ||
+        new Set(normalizedExerciseStates.map((exercise) => exercise.id))
+          .size !== normalizedExerciseStates.length ||
         normalizedSets.some(
           (set) =>
             !isRecord(set) ||
             !uuidPattern.test(set.id ?? "") ||
             Object.keys(set).some(
               (key) =>
-                !["id", "actualLoadKg", "actualReps", "actualRir"].includes(
-                  key,
-                ),
+                ![
+                  "id",
+                  "type",
+                  "actualLoadKg",
+                  "actualReps",
+                  "actualRir",
+                  "checked",
+                ].includes(key),
             ) ||
             !Object.hasOwn(set, "actualLoadKg") ||
             !Object.hasOwn(set, "actualReps") ||
             !Object.hasOwn(set, "actualRir") ||
+            (Object.hasOwn(set, "type") &&
+              !["standard", "warmup", "failure"].includes(set.type)) ||
+            (Object.hasOwn(set, "checked") &&
+              typeof set.checked !== "boolean") ||
             (set.actualLoadKg !== null &&
               (typeof set.actualLoadKg !== "number" ||
                 !Number.isFinite(set.actualLoadKg) ||
@@ -1181,8 +1209,12 @@ export function createProgramsRouter({ pool }) {
       }
 
       const userId = request.auth.userId;
+      const requestPayload = { version, sets: normalizedSets };
+      if (Object.hasOwn(request.body ?? {}, "exerciseStates")) {
+        requestPayload.exerciseStates = normalizedExerciseStates;
+      }
       const requestHash = createHash("sha256")
-        .update(JSON.stringify({ version, sets: normalizedSets }))
+        .update(JSON.stringify(requestPayload))
         .digest("hex");
       const client = await pool.connect();
       try {
@@ -1236,7 +1268,7 @@ export function createProgramsRouter({ pool }) {
         }
         const setIds = normalizedSets.map(({ id }) => id);
         const ownedSets = await client.query(
-          `SELECT sets.id, sets.set_type
+          `SELECT sets.id, sets.set_type, sets.checked_at
            FROM session_sets AS sets
            JOIN session_exercises AS exercises
              ON exercises.user_id = sets.user_id
@@ -1250,34 +1282,93 @@ export function createProgramsRouter({ pool }) {
           validationError(response, "A set does not belong to this workout.");
           return;
         }
+        if (normalizedExerciseStates.length > 0) {
+          const exerciseIds = normalizedExerciseStates.map(({ id }) => id);
+          const ownedExercises = await client.query(
+            `SELECT id FROM session_exercises
+             WHERE user_id = $1 AND session_id = $2 AND id = ANY($3::uuid[])`,
+            [userId, sessionId, exerciseIds],
+          );
+          if (ownedExercises.rows.length !== normalizedExerciseStates.length) {
+            await client.query("ROLLBACK");
+            validationError(
+              response,
+              "An exercise state does not belong to this workout.",
+            );
+            return;
+          }
+          for (const exercise of normalizedExerciseStates) {
+            await client.query(
+              `UPDATE session_exercises
+               SET skipped = $1
+               WHERE user_id = $2 AND id = $3`,
+              [exercise.skipped, userId, exercise.id],
+            );
+          }
+        }
         const setTypeById = new Map(
           ownedSets.rows.map(({ id, set_type: type }) => [id, type]),
         );
         if (
-          normalizedSets.some(
-            (set) =>
-              setTypeById.get(set.id) === "failure" &&
+          normalizedSets.some((set) => {
+            const type = set.type ?? setTypeById.get(set.id);
+            const checked = Object.hasOwn(set, "checked")
+              ? set.checked
+              : set.actualLoadKg !== null &&
+                set.actualReps !== null &&
+                set.actualRir !== null;
+            return (
+              checked &&
+              type === "failure" &&
               set.actualLoadKg !== null &&
               set.actualReps !== null &&
               set.actualRir !== null &&
-              set.actualRir !== 0,
-          )
+              set.actualRir !== 0
+            );
+          })
         ) {
           await client.query("ROLLBACK");
           validationError(response, "Failure sets require actual RIR 0.");
           return;
         }
         for (const set of normalizedSets) {
+          const checked = Object.hasOwn(set, "checked")
+            ? set.checked
+            : set.actualLoadKg !== null &&
+              set.actualReps !== null &&
+              set.actualRir !== null;
+          if (
+            checked &&
+            (set.actualLoadKg === null ||
+              set.actualReps === null ||
+              set.actualRir === null)
+          ) {
+            await client.query("ROLLBACK");
+            validationError(
+              response,
+              "Checked sets require actual load, reps, and RIR.",
+            );
+            return;
+          }
           await client.query(
             `UPDATE session_sets
-             SET actual_load_kg = $1::numeric, actual_reps = $2::integer,
-                 actual_rir = $3::smallint,
+             SET set_type = $1,
+                 actual_load_kg = $2::numeric,
+                 actual_reps = $3::integer,
+                 actual_rir = $4::smallint,
                  checked_at = CASE
-                   WHEN $1::numeric IS NOT NULL AND $2::integer IS NOT NULL
-                     AND $3::smallint IS NOT NULL
-                   THEN now() ELSE NULL END
-             WHERE user_id = $4 AND id = $5`,
-            [set.actualLoadKg, set.actualReps, set.actualRir, userId, set.id],
+                   WHEN $5::boolean THEN coalesce(checked_at, now())
+                   ELSE NULL END
+             WHERE user_id = $6 AND id = $7`,
+            [
+              set.type ?? setTypeById.get(set.id),
+              set.actualLoadKg,
+              set.actualReps,
+              set.actualRir,
+              checked,
+              userId,
+              set.id,
+            ],
           );
         }
         const updated = await client.query(
