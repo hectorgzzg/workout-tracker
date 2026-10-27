@@ -243,6 +243,13 @@ test.describe("WT-015: mocked Home and workout detail UI", () => {
     await page.getByRole("button", { name: "Show week" }).click();
     await expect(home.calendar.getByRole("listitem")).toHaveCount(7);
 
+    const collapseButton = page.getByRole("button", {
+      name: "Collapse current program",
+    });
+    await expect(collapseButton).toHaveAttribute("aria-expanded", "true");
+    await expect(home.programDays).toBeVisible();
+    await collapseButton.click();
+
     const expandButton = page.getByRole("button", {
       name: "Expand current program",
     });
