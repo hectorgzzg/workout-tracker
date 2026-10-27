@@ -812,17 +812,17 @@ export default {
             </p>
 
             <div class="program-weeks">
-              <section
+              <details
                 v-for="week in state.selectedProgram.weeks"
                 :key="week.id"
                 class="program-week"
               >
-                <header>
+                <summary class="program-week__summary">
                   <h3>Week {{ week.weekNumber }}</h3>
                   <span>{{
                     week.type === "deload" ? "Manual deload" : "Training"
                   }}</span>
-                </header>
+                </summary>
                 <ol class="program-days">
                   <li
                     v-for="day in week.days"
@@ -1015,7 +1015,7 @@ export default {
                     </template>
                   </li>
                 </ol>
-              </section>
+              </details>
             </div>
 
             <section

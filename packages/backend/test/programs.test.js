@@ -831,6 +831,39 @@ describe("WT-012 program import", () => {
     });
   });
 
+  test("serves every API response required to open an active workout detail", async () => {
+    const cookie = await signIn();
+    const { templateId, runId } = await createReadyProgram(cookie);
+
+    const [current, program, catalog] = await Promise.all([
+      request(app).get("/api/program-runs/current").set("Cookie", cookie),
+      request(app).get(`/api/programs/${templateId}`).set("Cookie", cookie),
+      request(app).get("/api/catalog/exercises").set("Cookie", cookie),
+    ]);
+
+    expect(current.status).toBe(200);
+    expect(current.body).toMatchObject({ id: runId, templateId });
+    expect(program.status).toBe(200);
+    const currentWorkout = program.body.weeks
+      .flatMap((week) => week.days)
+      .find((day) => day.id === current.body.week.days[0].templateDayId);
+    expect(currentWorkout).toMatchObject({
+      type: "workout",
+      exercises: [
+        {
+          name: "Known lift",
+          sets: [{ type: "standard", repMin: 5, repMax: 8, rir: 2 }],
+        },
+      ],
+    });
+    expect(catalog.status).toBe(200);
+    expect(catalog.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: knownExerciseId }),
+      ]),
+    );
+  });
+
   test("starts and replays one timezone-stamped session with prescription snapshots", async () => {
     const cookie = await signIn();
     const { runId } = await createReadyProgram(cookie);
@@ -1171,6 +1204,171 @@ describe("WT-012 program import", () => {
       .get(`/api/workout-sessions/${started.body.id}`)
       .set("Cookie", otherCookie);
     expect(hidden.status).toBe(404);
+  });
+
+  test("supports explicit check state and set type edits while enforcing failure RIR", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    const {
+      rows: [day],
+    } = await database.query(
+      `SELECT id FROM program_run_days
+       WHERE user_id = $1 AND run_id = $2 AND day_type = 'workout'
+         AND status = 'pending' ORDER BY week_number, slot_number LIMIT 1`,
+      [member.id, runId],
+    );
+    const started = await request(app)
+      .post("/api/workout-sessions/start")
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({ runId, runDayId: day.id });
+    expect(started.status).toBe(201);
+    const setId = started.body.exercises[0].sets[0].id;
+
+    const unchecked = await request(app)
+      .put(`/api/workout-sessions/${started.body.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({
+        version: 1,
+        sets: [
+          {
+            id: setId,
+            type: "warmup",
+            actualLoadKg: 35,
+            actualReps: 8,
+            actualRir: 4,
+            checked: false,
+          },
+        ],
+      });
+    expect(unchecked.status).toBe(200);
+    expect(unchecked.body.exercises[0].sets[0]).toMatchObject({
+      type: "warmup",
+      checked: false,
+      actualLoadKg: "35.000",
+      actualReps: 8,
+      actualRir: 4,
+    });
+
+    const checkedFailure = await request(app)
+      .put(`/api/workout-sessions/${started.body.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({
+        version: 2,
+        sets: [
+          {
+            id: setId,
+            type: "failure",
+            actualLoadKg: 40,
+            actualReps: 10,
+            actualRir: 0,
+            checked: true,
+          },
+        ],
+      });
+    expect(checkedFailure.status).toBe(200);
+    expect(checkedFailure.body.exercises[0].sets[0]).toMatchObject({
+      type: "failure",
+      checked: true,
+      actualLoadKg: "40.000",
+      actualReps: 10,
+      actualRir: 0,
+    });
+
+    const invalidFailure = await request(app)
+      .put(`/api/workout-sessions/${started.body.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({
+        version: 3,
+        sets: [
+          {
+            id: setId,
+            type: "failure",
+            actualLoadKg: 42.5,
+            actualReps: 8,
+            actualRir: 1,
+            checked: true,
+          },
+        ],
+      });
+    expect(invalidFailure.status).toBe(400);
+    expect(invalidFailure.body.error).toMatch(
+      /failure sets require actual rir 0/i,
+    );
+  });
+
+  test("persists skipped exercise state independently from set rows", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    const {
+      rows: [day],
+    } = await database.query(
+      `SELECT id FROM program_run_days
+       WHERE user_id = $1 AND run_id = $2 AND day_type = 'workout'
+         AND status = 'pending' ORDER BY week_number, slot_number LIMIT 1`,
+      [member.id, runId],
+    );
+    const started = await request(app)
+      .post("/api/workout-sessions/start")
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({ runId, runDayId: day.id });
+    expect(started.status).toBe(201);
+    const setId = started.body.exercises[0].sets[0].id;
+    const firstExerciseId = started.body.exercises[0].id;
+
+    const skipped = await request(app)
+      .put(`/api/workout-sessions/${started.body.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({
+        version: 1,
+        sets: [
+          {
+            id: setId,
+            type: "standard",
+            actualLoadKg: 40,
+            actualReps: 6,
+            actualRir: 2,
+            checked: true,
+          },
+        ],
+        exerciseStates: [{ id: firstExerciseId, skipped: true }],
+      });
+
+    expect(skipped.status).toBe(200);
+    expect(skipped.body.exercises[0]).toMatchObject({ skipped: true });
+
+    const restored = await request(app)
+      .put(`/api/workout-sessions/${started.body.id}`)
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({
+        version: 2,
+        sets: [
+          {
+            id: setId,
+            type: "standard",
+            actualLoadKg: 40,
+            actualReps: 6,
+            actualRir: 2,
+            checked: true,
+          },
+        ],
+        exerciseStates: [{ id: firstExerciseId, skipped: false }],
+      });
+    expect(restored.status).toBe(200);
+    expect(restored.body.exercises[0]).toMatchObject({ skipped: false });
   });
 
   test("rejects ineligible run slots and rechecks eligibility for finalization", async () => {
