@@ -1102,6 +1102,83 @@ describe("WT-012 program import", () => {
     expect(sessions.rows).toHaveLength(1);
   });
 
+  test("persists valid timer snapshots and rejects malformed or conflicting updates", async () => {
+    const cookie = await signIn();
+    const { runId } = await createReadyProgram(cookie);
+    const {
+      rows: [day],
+    } = await database.query(
+      `SELECT id FROM program_run_days
+       WHERE user_id = $1 AND run_id = $2 AND day_type = 'workout'
+         AND status = 'pending' ORDER BY week_number, slot_number LIMIT 1`,
+      [member.id, runId],
+    );
+    const started = await request(app)
+      .post("/api/workout-sessions/start")
+      .set("Origin", origin)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({ runId, runDayId: day.id });
+    const setId = started.body.exercises[0].sets[0].id;
+    const timers = {
+      sessionElapsedSeconds: 35,
+      sessionStartedAt: "2026-10-27T14:00:00.000Z",
+      paused: false,
+      restPaused: false,
+      restDurationSeconds: 60,
+      restRemainingSeconds: 45,
+      restEndsAt: "2026-10-27T14:00:45.000Z",
+    };
+    const saveBody = {
+      version: 1,
+      sets: [
+        {
+          id: setId,
+          type: "standard",
+          actualLoadKg: null,
+          actualReps: null,
+          actualRir: null,
+          checked: false,
+        },
+      ],
+      timers,
+    };
+    const saveKey = randomUUID();
+    const save = (body = saveBody, key = saveKey) =>
+      request(app)
+        .put(`/api/workout-sessions/${started.body.id}`)
+        .set("Origin", origin)
+        .set("Cookie", cookie)
+        .set("Idempotency-Key", key)
+        .send(body);
+
+    const acknowledged = await save();
+    expect(acknowledged.status).toBe(200);
+    expect(acknowledged.body.timers).toEqual(timers);
+    const persisted = await database.query(
+      "SELECT timer_state FROM workout_sessions WHERE id = $1",
+      [started.body.id],
+    );
+    expect(persisted.rows[0].timer_state).toEqual(timers);
+
+    const recovered = await request(app)
+      .get("/api/workout-sessions/active")
+      .set("Cookie", cookie);
+    expect(recovered.body.timers).toEqual(timers);
+
+    const malformed = await save(
+      { ...saveBody, version: 2, timers: { ...timers, restEndsAt: "later" } },
+      randomUUID(),
+    );
+    expect(malformed.status).toBe(400);
+
+    const conflictingReplay = await save({
+      ...saveBody,
+      timers: { ...timers, restRemainingSeconds: 44 },
+    });
+    expect(conflictingReplay.status).toBe(409);
+  });
+
   test("replays acknowledged set saves, rejects stale versions, and excludes finished drafts", async () => {
     const cookie = await signIn();
     const { runId } = await createReadyProgram(cookie);

@@ -4,16 +4,27 @@ Use this file for the current, unfinished task. It is ignored by Git and is not 
 
 - WT-016: online drafts and conflict-safe session persistence.
 
-## Current Task
+## Previous Task
 
 - WT-016 implementation and automated verification complete; no Playwright/browser or physical-device validation was run.
 
-## Approach
+## WT-016 Approach
 
 - Added versioned, idempotent session persistence, database snapshots, local-date/run eligibility checks, and active-draft recovery using existing session/program schema.
 - Integrated Start/Resume with a basic online tracker save flow. Kept finalization and finished-history presentation for WT-023 and WT-025; added no offline queue.
 - Focused regressions exposed the missing tracker route, CORS header, date guard, and duplicate catalog exercise snapshot collision; fixed and verified each locally.
 - Verification: full Jest 22 suites / 129 tests, lint, format check, production build, and `git diff --check` passed. PGlite only; browser/device checks remain pending.
+
+## Current Task: WT-018 Recoverable Timers
+
+- RED: pure timer suite initially failed because `timers.js` was absent; tracker suite then failed because the timer UI was absent; backend persistence test returned 400 for valid timer state.
+- Technical choice: persist a compact timer JSONB snapshot through the existing versioned/idempotent draft save. Store accumulated session seconds plus a running ISO anchor, and rest duration/remaining plus its end timestamp. Interval callbacks refresh presentation only; they do not accumulate elapsed time.
+- Module choice: keep `timers.js` as the single ESM implementation. The app provides it through Vue dependency injection; test setup supplies the same service. This avoids importing ESM directly from Vue SFCs that Jest transforms to CommonJS.
+- Numeric fixtures: 12.5 seconds rounds to 12 elapsed; pause at 12.5 sec, resume at 20 sec, read at 30 sec gives 22; a 60 sec rest has 45 sec after 15 sec and zero at its end. Component uses 75 sec profile override and a 10 sec progress/audio fixture.
+- Files: migration `packages/backend/migrations/009_session_timers.sql`; backend `packages/backend/src/programs.js` and `packages/backend/test/programs.test.js`; frontend `packages/frontend/src/timers.js`, `packages/frontend/src/timers.test.js`, `packages/frontend/src/main.js`, `packages/frontend/test/setup.js`, `packages/frontend/src/views/WorkoutTrackerView.vue`, `packages/frontend/src/views/WorkoutTrackerView.wt018.test.js`, `packages/frontend/src/style.css`, and `e2e/wt-018.spec.js`; backlog and session history.
+- Commands: focused timer/frontend/backend Jest commands, `npm test -- --runInBand`, `npm run lint`, `npm run format:check`, `npm run build`, and `git diff --check`.
+- Final verification: full Jest 25 suites / 150 tests passed; all 7 Chromium journeys passed with 2 workers and retries disabled; WT-018 passed serially 3/3 and the pause/reload test passed on repeat. Changed-file lint, formatting, build, and `git diff --check` passed. Playwright state is mocked; backend tests use isolated PGlite. External PostgreSQL and physical-device checks remain unrun.
+- User-reported manual frontend validation: timer state remained after page reload and the completion tone was audible. The service/database and physical device used were not specified; no further WT-018 frontend check is pending based on this report.
 
 ## WT-012 Context
 

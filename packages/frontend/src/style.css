@@ -1402,6 +1402,68 @@ a.program-slot__link:hover strong {
   padding-bottom: 8px;
 }
 
+.tracker-timers {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.tracker-timers__readouts {
+  display: grid;
+  grid-template-columns: minmax(76px, 0.7fr) minmax(120px, 1.3fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.tracker-timers__readout {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.tracker-timers__readout output {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.1rem;
+}
+
+.tracker-timers__readout--rest {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 10px;
+}
+
+.tracker-timers__readout--rest span {
+  grid-column: 1 / -1;
+}
+
+.tracker-timers__readout progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--coral);
+}
+
+.tracker-timers__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tracker-timers__actions .button {
+  min-height: 40px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+
 .tracker-exercise-nav__item {
   position: relative;
   display: grid;
@@ -1505,6 +1567,7 @@ a.program-slot__link:hover strong {
 }
 
 .tracker-set {
+  min-width: 0;
   margin: 0;
   padding: 10px 0;
   border: 0;

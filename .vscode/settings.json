@@ -185,6 +185,14 @@
       "matchCommandLine": true
     },
     "diff": true,
-    "git check-ignore": true
+    "git check-ignore": true,
+    "/^node -e 'const u=process\\.env\\.TEST_DATABASE_URL; if \\(!u\\) \\{ console\\.log\\(\"TEST_DATABASE_URL: unset\"\\); process\\.exit\\(0\\); \\} try \\{ console\\.log\\(`TEST_DATABASE_URL database: \\$\\{new URL\\(u\\)\\.pathname\\.slice\\(1\\) \\|\\| \"unknown\"\\}`\\); \\} catch \\{ console\\.log\\(\"TEST_DATABASE_URL: configured but not a URL\"\\); \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node -e 'for \\(const p of \\[3101,5174\\]\\) \\{ const s = require\\(\"node:net\"\\)\\.createServer\\(\\); s\\.once\\(\"error\", \\(\\) => console\\.log\\(`\\$\\{p\\}: in use`\\)\\); s\\.listen\\(p, \"127\\.0\\.0\\.1\", \\(\\) => s\\.close\\(\\(\\) => console\\.log\\(`\\$\\{p\\}: free`\\)\\)\\); \\}'$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }
