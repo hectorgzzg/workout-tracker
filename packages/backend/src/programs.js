@@ -12,6 +12,43 @@ function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function validTimerTimestamp(value) {
+  if (typeof value !== "string") return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function validTimerState(value) {
+  const keys = [
+    "sessionElapsedSeconds",
+    "sessionStartedAt",
+    "paused",
+    "restPaused",
+    "restDurationSeconds",
+    "restRemainingSeconds",
+    "restEndsAt",
+  ];
+  return (
+    isRecord(value) &&
+    Object.keys(value).length === keys.length &&
+    keys.every((key) => Object.hasOwn(value, key)) &&
+    Number.isInteger(value.sessionElapsedSeconds) &&
+    value.sessionElapsedSeconds >= 0 &&
+    typeof value.paused === "boolean" &&
+    typeof value.restPaused === "boolean" &&
+    Number.isInteger(value.restDurationSeconds) &&
+    value.restDurationSeconds >= 0 &&
+    Number.isInteger(value.restRemainingSeconds) &&
+    value.restRemainingSeconds >= 0 &&
+    value.restRemainingSeconds <= value.restDurationSeconds &&
+    (value.paused
+      ? value.sessionStartedAt === null && value.restEndsAt === null
+      : validTimerTimestamp(value.sessionStartedAt)) &&
+    (value.restEndsAt === null || validTimerTimestamp(value.restEndsAt)) &&
+    (!(value.paused || value.restPaused) || value.restEndsAt === null)
+  );
+}
+
 function validSource(value) {
   return (
     typeof value === "string" &&
@@ -636,6 +673,7 @@ function sessionResponse(row, exercises, replayed = false) {
     startedTimezone: row.started_timezone,
     startedLocalDate: row.started_local_date,
     version: row.version,
+    timers: row.timer_state,
     exercises,
     ...(replayed ? { replayed: true } : {}),
   };
@@ -646,7 +684,7 @@ async function getWorkoutSession(pool, userId, sessionId) {
     `SELECT id, program_run_id, program_run_day_id, status, has_performance,
             started_at, started_timezone,
             to_char(started_local_date, 'YYYY-MM-DD') AS started_local_date,
-            version
+          version, timer_state
      FROM workout_sessions WHERE user_id = $1 AND id = $2`,
     [userId, sessionId],
   );
@@ -1126,7 +1164,7 @@ export function createProgramsRouter({ pool }) {
     requireSignIn,
     async (request, response) => {
       const { sessionId } = request.params;
-      const { version, sets, exerciseStates } = request.body ?? {};
+      const { version, sets, exerciseStates, timers } = request.body ?? {};
       const idempotencyKey = request.get("Idempotency-Key");
       if (
         !uuidPattern.test(sessionId) ||
@@ -1137,9 +1175,11 @@ export function createProgramsRouter({ pool }) {
         sets.length > 500 ||
         (exerciseStates !== undefined &&
           (!Array.isArray(exerciseStates) || exerciseStates.length > 200)) ||
+        (timers !== undefined && !validTimerState(timers)) ||
         !idempotencyKeyPattern.test(idempotencyKey ?? "") ||
         Object.keys(request.body ?? {}).some(
-          (key) => !["version", "sets", "exerciseStates"].includes(key),
+          (key) =>
+            !["version", "sets", "exerciseStates", "timers"].includes(key),
         )
       ) {
         validationError(
@@ -1212,6 +1252,9 @@ export function createProgramsRouter({ pool }) {
       const requestPayload = { version, sets: normalizedSets };
       if (Object.hasOwn(request.body ?? {}, "exerciseStates")) {
         requestPayload.exerciseStates = normalizedExerciseStates;
+      }
+      if (Object.hasOwn(request.body ?? {}, "timers")) {
+        requestPayload.timers = timers;
       }
       const requestHash = createHash("sha256")
         .update(JSON.stringify(requestPayload))
@@ -1372,10 +1415,16 @@ export function createProgramsRouter({ pool }) {
           );
         }
         const updated = await client.query(
-          `UPDATE workout_sessions SET version = version + 1
+          `UPDATE workout_sessions
+           SET version = version + 1,
+               timer_state = coalesce($3::jsonb, timer_state)
            WHERE user_id = $1 AND id = $2 AND status = 'draft'
            RETURNING version`,
-          [userId, sessionId],
+          [
+            userId,
+            sessionId,
+            timers === undefined ? null : JSON.stringify(timers),
+          ],
         );
         await client.query(
           `INSERT INTO workout_session_requests

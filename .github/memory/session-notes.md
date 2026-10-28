@@ -484,3 +484,26 @@ Document completed development sessions here so future work can benefit from the
 
 - Full frontend Jest passed 9 suites / 41 tests. Lint, format check, production build, editor diagnostics, and `git diff --check` passed.
 - Existing development servers on ports 5173 and 3000 were left running. No Playwright or physical-device checks were run.
+
+### Session: WT-018 recoverable session and rest timers
+
+**Date:** 2026-10-27
+
+#### What was accomplished
+
+- Added persistent timestamp-backed session/rest timer state to workout drafts through migration 009 and the existing versioned/idempotent save API.
+- Integrated profile rest durations, combined session pause/resume, independent rest controls, completion-triggered working-set rest, diminishing progress, and foreground-only audio into the tracker.
+- Added pure fake-clock, tracker component, and backend persistence/idempotency tests; updated WT-018 verification evidence.
+
+#### Key findings and decisions
+
+- Persist transitions and timestamp anchors, not interval ticks; the interval only refreshes visible values. This supports accurate recovery and avoids frequent draft writes.
+- Keep rest-only pause separate from whole-session pause; both countdown and elapsed-session behavior are timestamp-derived.
+- Keep timer logic in the single ESM `timers.js` module. Provide it through Vue dependency injection from app bootstrap and test setup because Vue Jest compiles SFCs to CommonJS and cannot synchronously require ESM.
+- Rest durations come from the user's profile by the snapshotted exercise category; CSV rest values are never used.
+
+#### Outcomes
+
+- Intended REDs were observed for missing pure timer logic/UI and API rejection of timer state. Full Jest passed 25 suites / 150 tests. Full Chromium passed 7 tests with two workers and retries disabled; WT-018 passed serially 3/3 and the pause/reload journey passed on repeat.
+- Changed-file ESLint, `npm run format:check`, `npm run build`, editor diagnostics, and `git diff --check` passed. A 390px browser check exposed the tracker fieldset's intrinsic width; setting `.tracker-set { min-width: 0 }` fixed page overflow at 390px and 1440px.
+- The Playwright API is mocked, so its reload check verifies recovery of acknowledged mock state, not backend persistence. Backend persistence tests use isolated PGlite. External PostgreSQL, real-service browser persistence, and physical-device checks remain unrun; background/locked-phone audio remains outside browser guarantees.

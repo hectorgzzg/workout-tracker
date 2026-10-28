@@ -1,7 +1,19 @@
 <script>
 const KG_PER_LB = 0.45359237;
+const defaultRestDurationsSeconds = {
+  upper_compound: 120,
+  lower_compound: 180,
+  upper_isolation: 90,
+  lower_isolation: 90,
+  core: 60,
+};
 
 export default {
+  inject: {
+    timerFunctions: {
+      default: () => globalThis.__WORKOUT_TIMER_FUNCTIONS__,
+    },
+  },
   data() {
     return {
       state: {
@@ -11,6 +23,9 @@ export default {
         saved: false,
         saving: false,
         session: null,
+        timers: null,
+        timerNow: Date.now(),
+        restDurationsSeconds: { ...defaultRestDurationsSeconds },
         inputs: {},
         selectedExerciseIndex: 0,
         setExerciseById: {},
@@ -42,7 +57,12 @@ export default {
     },
   },
   mounted() {
+    this._timerIntervalId = setInterval(this.refreshTimerDisplay, 250);
     this.loadSession();
+  },
+  beforeUnmount() {
+    clearInterval(this._timerIntervalId);
+    this._audioContext?.close?.();
   },
   methods: {
     async request(path, options = {}) {
@@ -163,9 +183,14 @@ export default {
         const session = await this.request(path);
         this.state.session = session;
         if (session) {
+          this.state.timers = this.restoreTimerState(session);
+          this.state.timerNow = Date.now();
           this.initializeInputs(session);
           this.state.selectedExerciseIndex = 0;
-          await this.loadUnitPreferences(session);
+          await Promise.all([
+            this.loadUnitPreferences(session),
+            this.loadRestDurations(),
+          ]);
         }
         this.state.pendingSave = null;
       } catch (error) {
@@ -173,6 +198,167 @@ export default {
       } finally {
         this.state.loading = false;
       }
+    },
+    restoreTimerState(session) {
+      const timers = session.timers;
+      if (
+        timers &&
+        Number.isInteger(timers.sessionElapsedSeconds) &&
+        typeof timers.paused === "boolean" &&
+        typeof timers.restPaused === "boolean" &&
+        Number.isInteger(timers.restDurationSeconds) &&
+        Number.isInteger(timers.restRemainingSeconds)
+      ) {
+        return timers;
+      }
+      const startedAt = Date.parse(session.startedAt);
+      return this.timerFunctions.createTimerState(
+        Number.isFinite(startedAt) ? startedAt : Date.now(),
+      );
+    },
+    async loadRestDurations() {
+      try {
+        const settings = await this.request("/api/settings");
+        const configured = settings.profile?.restDurationsSeconds;
+        if (!configured || typeof configured !== "object") return;
+        this.state.restDurationsSeconds = {
+          ...defaultRestDurationsSeconds,
+          ...Object.fromEntries(
+            Object.keys(defaultRestDurationsSeconds)
+              .filter(
+                (category) =>
+                  Number.isInteger(configured[category]) &&
+                  configured[category] > 0,
+              )
+              .map((category) => [category, configured[category]]),
+          ),
+        };
+      } catch {
+        this.state.restDurationsSeconds = { ...defaultRestDurationsSeconds };
+      }
+    },
+    refreshTimerDisplay() {
+      if (!this.state.timers) return;
+      const previousRemaining = this.timerFunctions.getRestRemainingSeconds(
+        this.state.timers,
+        this.state.timerNow,
+      );
+      const now = Date.now();
+      this.state.timerNow = now;
+      const remaining = this.timerFunctions.getRestRemainingSeconds(
+        this.state.timers,
+        now,
+      );
+      if (previousRemaining > 0 && remaining === 0) this.playRestTone();
+    },
+    formatTimer(seconds) {
+      const total = Math.max(0, Math.floor(seconds));
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const remainingSeconds = total % 60;
+      const pad = (value) => String(value).padStart(2, "0");
+      return hours > 0
+        ? `${pad(hours)}:${pad(minutes)}:${pad(remainingSeconds)}`
+        : `${pad(minutes)}:${pad(remainingSeconds)}`;
+    },
+    sessionTimerText() {
+      return this.formatTimer(
+        this.timerFunctions.getSessionElapsedSeconds(
+          this.state.timers,
+          this.state.timerNow,
+        ),
+      );
+    },
+    restTimerText() {
+      return this.formatTimer(
+        this.timerFunctions.getRestRemainingSeconds(
+          this.state.timers,
+          this.state.timerNow,
+        ),
+      );
+    },
+    restTimerRemaining() {
+      return this.timerFunctions.getRestRemainingSeconds(
+        this.state.timers,
+        this.state.timerNow,
+      );
+    },
+    restDurationFor(exercise) {
+      return (
+        this.state.restDurationsSeconds[exercise?.snapshot?.restCategory] ?? 0
+      );
+    },
+    prepareAudio() {
+      const AudioContextConstructor =
+        globalThis.AudioContext ?? globalThis.webkitAudioContext;
+      if (!this._audioContext && AudioContextConstructor) {
+        this._audioContext = new AudioContextConstructor();
+      }
+      if (this._audioContext?.state === "suspended") {
+        this._audioContext.resume();
+      }
+    },
+    playRestTone() {
+      if (document.visibilityState !== "visible") return;
+      this.prepareAudio();
+      if (!this._audioContext) return;
+      const oscillator = this._audioContext.createOscillator();
+      const gain = this._audioContext.createGain();
+      oscillator.frequency.value = 880;
+      gain.gain.value = 0.12;
+      oscillator.connect(gain);
+      gain.connect(this._audioContext.destination);
+      oscillator.start();
+      oscillator.stop(this._audioContext.currentTime + 0.25);
+    },
+    async updateTimers(timers) {
+      this.state.timers = timers;
+      this.state.timerNow = Date.now();
+      this.state.saved = false;
+      this.prepareAudio();
+      await this.saveDraft();
+    },
+    async toggleSessionTimers() {
+      const timers = this.state.timers.paused
+        ? this.timerFunctions.resumeTimers(this.state.timers, Date.now())
+        : this.timerFunctions.pauseTimers(this.state.timers, Date.now());
+      await this.updateTimers(timers);
+    },
+    async startRest() {
+      const duration = this.restDurationFor(this.selectedExercise);
+      if (!duration) return;
+      await this.updateTimers(
+        this.timerFunctions.startRestTimer(
+          this.state.timers,
+          duration,
+          Date.now(),
+        ),
+      );
+    },
+    async toggleRestPause() {
+      const timers = this.state.timers.restPaused
+        ? this.timerFunctions.resumeRestTimer(this.state.timers, Date.now())
+        : this.timerFunctions.pauseRestTimer(this.state.timers, Date.now());
+      await this.updateTimers(timers);
+    },
+    async resetRest() {
+      await this.updateTimers(
+        this.timerFunctions.resetRestTimer(this.state.timers),
+      );
+    },
+    async skipRest() {
+      await this.updateTimers(
+        this.timerFunctions.skipRestTimer(this.state.timers),
+      );
+    },
+    async adjustRest(adjustmentSeconds) {
+      await this.updateTimers(
+        this.timerFunctions.adjustRestTimer(
+          this.state.timers,
+          adjustmentSeconds,
+          Date.now(),
+        ),
+      );
     },
     updateInput(setId, field, value) {
       if (this.state.inputs[setId]?.checked) return;
@@ -228,6 +414,15 @@ export default {
     toggleChecked(setId, checked) {
       if (!this.state.inputs[setId]) return;
       this.state.inputs[setId].checked = checked;
+      if (checked && this.state.inputs[setId].type !== "warmup") {
+        this.state.timers = this.timerFunctions.startRestTimer(
+          this.state.timers,
+          this.restDurationFor(this.selectedExercise),
+          Date.now(),
+        );
+        this.state.timerNow = Date.now();
+        this.prepareAudio();
+      }
       this.saveDraft();
     },
     createPayload() {
@@ -280,7 +475,12 @@ export default {
           });
         }
       }
-      return { version: this.state.session.version, sets, exerciseStates };
+      return {
+        version: this.state.session.version,
+        sets,
+        exerciseStates,
+        timers: this.state.timers,
+      };
     },
     async toggleExerciseSkipped(exercise) {
       this.state.skippedByExerciseId[exercise.id] =
@@ -323,6 +523,8 @@ export default {
           },
         );
         this.state.session = session;
+        this.state.timers = this.restoreTimerState(session);
+        this.state.timerNow = Date.now();
         this.initializeInputs(session, this.state.unitByExerciseId);
         this.state.pendingSave = null;
         this.state.saved = true;
@@ -401,6 +603,81 @@ export default {
       <RouterLink class="text-button" to="/">Return home</RouterLink>
     </div>
     <template v-else>
+      <section class="tracker-timers" aria-label="Workout timers">
+        <div class="tracker-timers__readouts">
+          <div class="tracker-timers__readout">
+            <span>Session</span>
+            <output aria-label="Session timer">{{ sessionTimerText() }}</output>
+          </div>
+          <div class="tracker-timers__readout tracker-timers__readout--rest">
+            <span>Rest</span>
+            <output aria-label="Rest timer">{{ restTimerText() }}</output>
+            <progress
+              aria-label="Rest timer progress"
+              :max="Math.max(1, state.timers.restDurationSeconds)"
+              :value="restTimerRemaining()"
+            ></progress>
+          </div>
+        </div>
+        <div class="tracker-timers__actions" aria-label="Timer controls">
+          <button
+            class="button button--quiet"
+            type="button"
+            :disabled="state.saving"
+            @click="toggleSessionTimers"
+          >
+            {{ state.timers.paused ? "Resume timers" : "Pause timers" }}
+          </button>
+          <button
+            class="button button--quiet"
+            type="button"
+            :disabled="state.saving || !restDurationFor(selectedExercise)"
+            @click="startRest"
+          >
+            Start rest
+          </button>
+          <button
+            class="button button--quiet"
+            type="button"
+            :disabled="state.saving || state.timers.restDurationSeconds === 0"
+            @click="toggleRestPause"
+          >
+            {{ state.timers.restPaused ? "Resume rest" : "Pause rest" }}
+          </button>
+          <button
+            class="button button--quiet"
+            type="button"
+            :disabled="state.saving || state.timers.restDurationSeconds === 0"
+            @click="resetRest"
+          >
+            Reset rest
+          </button>
+          <button
+            class="button button--quiet"
+            type="button"
+            :disabled="state.saving || state.timers.restDurationSeconds === 0"
+            @click="skipRest"
+          >
+            Skip rest
+          </button>
+          <button
+            class="button button--quiet"
+            type="button"
+            :disabled="state.saving || state.timers.restDurationSeconds === 0"
+            @click="adjustRest(30)"
+          >
+            Add 30 seconds
+          </button>
+          <button
+            class="button button--quiet"
+            type="button"
+            :disabled="state.saving || state.timers.restDurationSeconds === 0"
+            @click="adjustRest(-30)"
+          >
+            Subtract 30 seconds
+          </button>
+        </div>
+      </section>
       <header class="page-heading">
         <p class="eyebrow">Online draft · {{ state.session.status }}</p>
         <h1>Workout tracker</h1>
